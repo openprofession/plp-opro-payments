@@ -1,0 +1,27 @@
+{% extends 'admin/change_form.html' %}
+{% load i18n admin_modify static pse_admin_helpers %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <script type="text/javascript" src="{% static 'js/redactor/redactor/redactor.js' %}"></script>
+{% endblock %}
+
+{% block extrastyle %}
+    {{ block.super }}<link rel="stylesheet" type="text/css" href="{% static "js/redactor/redactor/redactor.css" %}" />
+{% endblock %}
+
+{% block content %}
+    {{ block.super }}
+    <script>
+    $(document).ready(function() {
+        var course_form = document.getElementById('course_form');
+        $('.vLargeTextField').redactor();
+
+       var boxes = $('.redactor-box');
+       for (var i=0; i < boxes.length; ++i){
+           $(boxes[i]).parent()[0].getElementsByTagName('label')[0].style.float = "none";
+           $(boxes[i]).parent()[0].getElementsByTagName('label')[0].style.display = "inline";
+       }
+    })
+    </script>
+{% endblock %}
