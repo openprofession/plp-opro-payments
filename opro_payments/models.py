@@ -118,3 +118,42 @@ class UpsaleLink(models.Model):
             return u'%s - %s' % (self.upsale, self.content_object)
         except (ObjectDoesNotExist, AssertionError):
             return ''
+
+
+class ObjectEnrollment(models.Model):
+    class ENROLLMENT_TYPE_CHOICES(object):
+        free = 0
+        paid = 1
+        choices = (
+            (free, 'Free'),
+            (paid, 'Paid'),
+        )
+
+    class PAYMENT_TYPE_CHOICES(object):
+        none = 0
+        yandex = 1
+        other = 2
+        choices = (
+            (none, 'None'),
+            (yandex, 'Yandex'),
+            (other, 'Other'),
+        )
+
+    user = models.ForeignKey('plp.User', verbose_name=_(u'Пользователь'), related_name='bought_objects')
+    upsale = models.ForeignKey('UpsaleLink', verbose_name=_(u'Запись на объект'), related_name='bought_objects')
+    enrollment_type = models.PositiveSmallIntegerField(verbose_name=_(u'Тип записи'), choices=ENROLLMENT_TYPE_CHOICES.choices)
+    payment_type = models.PositiveSmallIntegerField(verbose_name=_(u'Способ платежа'), choices=PAYMENT_TYPE_CHOICES.choices)
+    payment_order_id = models.CharField(max_length=64, null=True, blank=True,
+                                        verbose_name=_(u'Номер договора/заказа'))
+    payment_descriptions = models.TextField(null=True, blank=True,
+                                            verbose_name=_(u'Описание платежа\заказа'))
+    is_active = models.BooleanField(verbose_name=_(u'Статус записи'))
+    jsonfield = JSONField(blank=True, null=True)
+
+    class Meta:
+        verbose_name = _(u'Запись на объект')
+        verbose_name_plural = _(u'Записи на объекты')
+
+    def __unicode__(self):
+        return u'%s - %s' % (self.user, self.upsale)
+

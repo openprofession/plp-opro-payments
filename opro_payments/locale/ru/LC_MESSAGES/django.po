@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2016-10-28 14:18+0300\n"
+"POT-Creation-Date: 2016-10-28 17:04+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -47,6 +47,9 @@ msgid "Тип объекта не совпадает с выбранным об�
 msgstr ""
 
 msgid "Для данного объекта и апсейла уже существует Upsale Link"
+msgstr ""
+
+msgid "Тип записи несовместим со способом платежа"
 msgstr ""
 
 msgid "Код"
@@ -138,4 +141,28 @@ msgid "Отделяем от основного объекта"
 msgstr ""
 
 msgid "Цена"
+msgstr ""
+
+msgid "Пользователь"
+msgstr ""
+
+msgid "Запись на объект"
+msgstr ""
+
+msgid "Тип записи"
+msgstr ""
+
+msgid "Способ платежа"
+msgstr ""
+
+msgid "Номер договора/заказа"
+msgstr ""
+
+msgid "Описание платежа\\заказа"
+msgstr ""
+
+msgid "Статус записи"
+msgstr ""
+
+msgid "Записи на объекты"
 msgstr ""

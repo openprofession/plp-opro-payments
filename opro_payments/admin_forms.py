@@ -5,7 +5,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.validators import validate_email
 from django.utils.translation import ugettext_lazy as _
 import autocomplete_light
-from .models import Upsale, UpsaleLink
+from .models import Upsale, UpsaleLink, ObjectEnrollment
 
 
 class UpsaleForm(forms.ModelForm):
@@ -113,3 +113,26 @@ class UpsaleLinkForm(forms.ModelForm):
             'object_id': forms.HiddenInput,
         }
         js = ('dependant_autocomplete.js',)
+
+
+class ObjectEnrollmentForm(forms.ModelForm):
+    is_active = forms.ChoiceField(label=ObjectEnrollment._meta.get_field('is_active').verbose_name,
+                                  choices=((False, 'Inactive'), (True, 'Active')), required=False)
+
+    def clean(self):
+        data = super(ObjectEnrollmentForm, self).clean()
+        enrollment_type = data.get('enrollment_type')
+        payment_type = data.get('payment_type')
+        if enrollment_type is not None and payment_type is not None:
+            paid_enrollment = enrollment_type == ObjectEnrollment.ENROLLMENT_TYPE_CHOICES.paid
+            paid = payment_type != ObjectEnrollment.PAYMENT_TYPE_CHOICES.none
+            if paid_enrollment and not paid or paid and not paid_enrollment:
+                raise forms.ValidationError(_(u'Тип записи несовместим со способом платежа'))
+        return data
+
+    class Meta:
+        model = ObjectEnrollment
+        fields = '__all__'
+        widgets = {
+            'user': autocomplete_light.ChoiceWidget(autocomplete='UserAutocomplete'),
+        }
