@@ -19,6 +19,7 @@ class UpsaleLinkAdmin(admin.ModelAdmin):
 class ObjectEnrollmentAdmin(admin.ModelAdmin):
     form = ObjectEnrollmentForm
     search_fields = ('user__username', 'user__email')
+    readonly_fields = ('jsonfield', )
 
     def formfield_for_dbfield(self, db_field, **kwargs):
         field = super(ObjectEnrollmentAdmin, self).formfield_for_dbfield(db_field, **kwargs)

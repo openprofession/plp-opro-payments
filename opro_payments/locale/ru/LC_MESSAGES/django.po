@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2016-10-28 17:04+0300\n"
+"POT-Creation-Date: 2016-10-28 20:13+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -44,9 +44,6 @@ msgid "В списке содержатся невалидные емейлы: %
 msgstr ""
 
 msgid "Тип объекта не совпадает с выбранным объектом"
-msgstr ""
-
-msgid "Для данного объекта и апсейла уже существует Upsale Link"
 msgstr ""
 
 msgid "Тип записи несовместим со способом платежа"
@@ -141,6 +138,11 @@ msgid "Отделяем от основного объекта"
 msgstr ""
 
 msgid "Цена"
+msgstr ""
+
+msgid ""
+"json вида {\"promo\": {\"file\":\"123.txt\", \"already_sent\": 4}}. "
+"\"already_sent\" - служебное поле, не менять"
 msgstr ""
 
 msgid "Пользователь"

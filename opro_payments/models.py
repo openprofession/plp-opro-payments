@@ -1,10 +1,13 @@
 # coding: utf-8
 
+import os
+import linecache
+import logging
 from django.conf import settings
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import models
+from django.db import models, transaction
 from django.utils.translation import ugettext_lazy as _
 from imagekit.models import ImageSpecField
 from imagekit.processors import Resize
@@ -104,7 +107,9 @@ class UpsaleLink(models.Model):
         verbose_name=_(u'За сколько дней до конца сессии прекращать возврат денег за услугу?'),
         blank=True, null=True
     )
-    additional_info = JSONField(blank=True, null=True)
+    additional_info = JSONField(blank=True, null=True,
+                                help_text=_(u'json вида {"promo": {"file":"123.txt", "already_sent": 4}}. '
+                                            u'"already_sent" - служебное поле, не менять'))
 
     def get_price(self):
         return self.price if self.price is not None else self.upsale.price
@@ -118,6 +123,13 @@ class UpsaleLink(models.Model):
             return u'%s - %s' % (self.upsale, self.content_object)
         except (ObjectDoesNotExist, AssertionError):
             return ''
+
+    @classmethod
+    def get_promocode_dir(cls):
+        path = getattr(settings, 'UPSALE_PROMOCODES_DIR', None)
+        if path is None:
+            return os.path.dirname(os.path.dirname(settings.BASE_DIR))
+        return path
 
 
 class ObjectEnrollment(models.Model):
@@ -157,3 +169,27 @@ class ObjectEnrollment(models.Model):
     def __unicode__(self):
         return u'%s - %s' % (self.user, self.upsale)
 
+    def save(self, **kwargs):
+        if self.id:
+            super(ObjectEnrollment, self).save()
+            return
+        with transaction.atomic():
+            info = UpsaleLink.objects.get(id=self.upsale_id).additional_info or {}
+            promo_file = info.get('promo', {}).get('file')
+            if promo_file:
+                file_path = os.path.join(UpsaleLink.get_promocode_dir(), promo_file)
+                if not os.path.exists(file_path):
+                    logging.error('Upsale promocodes path does not exist: %s' % file_path)
+                try:
+                    line = int(info['promo'].get('already_sent')) + 1
+                except (TypeError, ValueError):
+                    line = 1
+                code = linecache.getline(file_path, line).strip()
+                if not code:
+                    logging.error('Failed to read %s line from %s' % (line, file_path))
+                else:
+                    info['promo']['already_sent'] = line
+                    self.jsonfield = {'promo_code': code}
+                    self.upsale.additional_info = info
+                    self.upsale.save()
+            super(ObjectEnrollment, self).save()

@@ -106,6 +106,25 @@ class UpsaleLinkForm(forms.ModelForm):
                 raise forms.ValidationError(_(u'Тип объекта не совпадает с выбранным объектом'))
         return data
 
+    def clean_additional_info(self):
+        # запрет изменения already_sent
+        data = self.cleaned_data.get('additional_info')
+        if data and self.instance.pk:
+            try:
+                old_data = self.instance._meta.model.objects.get(pk=self.instance.pk).additional_info or {}
+                sent_val = data.get('promo', {}).get('already_sent')
+                old_sent_val = old_data.get('promo', {}).get('already_sent', 0)
+                if sent_val != old_sent_val:
+                    tmp = data.get('promo', {})
+                    tmp['already_sent'] = old_sent_val
+                    data['promo'] = tmp
+            except ValueError:
+                pass
+        if data and not self.instance.pk:
+            if 'promo' in data and isinstance(data['promo'], dict):
+                data['promo']['already_sent'] = 0
+        return data
+
     class Meta:
         model = UpsaleLink
         fields = '__all__'
