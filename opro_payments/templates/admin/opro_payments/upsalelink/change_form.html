@@ -1,0 +1,33 @@
+{% extends 'admin/change_form.html' %}
+
+{% block content %}
+    {{ block.super }}
+    <script>
+    $(document).ready(function() {
+        $('.field-autocomplete_field').detach().insertAfter('.field-content_type');
+        function set_autocomplete_additional_data(ctype_id) {
+            var WidgetElement = $('#id_autocomplete_field-autocomplete').parents('.autocomplete-light-widget');
+            if (ctype_id) {
+                WidgetElement.yourlabsWidget().autocomplete.data = {
+                    'ctype_id': ctype_id
+                };
+            }
+            else {
+                WidgetElement.yourlabsWidget().autocomplete.data = {};
+            }
+        }
+        $('body').on('change', '#id_content_type', function() {
+            var ctype_id = $(this).val();
+            set_autocomplete_additional_data(ctype_id);
+            var chosen_item = $('#id_autocomplete_field-deck').find('span.remove');
+            if (chosen_item.length) {
+                chosen_item.trigger('click');
+            }
+        });
+        $('form').on('submit', function() {
+            $('#id_object_id').val($('#id_autocomplete_field-deck').find('span.hilight').data('value').split('-')[1]);
+        });
+        set_autocomplete_additional_data($('#id_content_type').val());
+    })
+    </script>
+{% endblock %}

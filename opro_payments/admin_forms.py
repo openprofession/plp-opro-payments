@@ -1,9 +1,11 @@
 # coding: utf-8
 
 from django import forms
+from django.contrib.contenttypes.models import ContentType
 from django.core.validators import validate_email
 from django.utils.translation import ugettext_lazy as _
-from .models import Upsale
+import autocomplete_light
+from .models import Upsale, UpsaleLink
 
 
 class UpsaleForm(forms.ModelForm):
@@ -77,3 +79,37 @@ class UpsaleForm(forms.ModelForm):
         widgets = {
             'description': forms.Textarea,
         }
+
+
+class UpsaleLinkForm(forms.ModelForm):
+    autocomplete_field = autocomplete_light.ChoiceField(
+        autocomplete='UpsaleLinkMulticomplete',
+        label=UpsaleLink._meta.get_field('object_id').verbose_name,
+    )
+
+    def __init__(self, *args, **kwargs):
+        super(UpsaleLinkForm, self).__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            self.fields['autocomplete_field'].initial = '%s-%s' % (self.instance.content_type.id,
+                                                                   self.instance.object_id)
+        self.fields['upsale'] = autocomplete_light.ModelChoiceField(autocomplete='UpsaleAutocomplete')
+        self.fields['content_type'].empty_label = None
+
+    def clean(self):
+        data = super(UpsaleLinkForm, self).clean()
+        autocomplete = data.get('autocomplete_field')
+        content_type = data.get('content_type')
+        if autocomplete and content_type:
+            ctype_id = autocomplete.split('-')[0]
+            ct = ContentType.objects.get(id=ctype_id)
+            if ct != content_type:
+                raise forms.ValidationError(_(u'Тип объекта не совпадает с выбранным объектом'))
+        return data
+
+    class Meta:
+        model = UpsaleLink
+        fields = '__all__'
+        widgets = {
+            'object_id': forms.HiddenInput,
+        }
+        js = ('dependant_autocomplete.js',)

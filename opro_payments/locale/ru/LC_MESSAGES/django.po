@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2016-10-26 19:54+0300\n"
+"POT-Creation-Date: 2016-10-28 14:18+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -41,6 +41,12 @@ msgstr ""
 
 #, python-format
 msgid "В списке содержатся невалидные емейлы: %s"
+msgstr ""
+
+msgid "Тип объекта не совпадает с выбранным объектом"
+msgstr ""
+
+msgid "Для данного объекта и апсейла уже существует Upsale Link"
 msgstr ""
 
 msgid "Код"
@@ -114,4 +120,22 @@ msgid "Апсейл"
 msgstr ""
 
 msgid "Апсейлы"
+msgstr ""
+
+msgid "Тип объекта, к которому апсейл"
+msgstr ""
+
+msgid "Объект, к которому апсейл"
+msgstr ""
+
+msgid "Апсейл активен"
+msgstr ""
+
+msgid "Объект оплачивается"
+msgstr ""
+
+msgid "Отделяем от основного объекта"
+msgstr ""
+
+msgid "Цена"
 msgstr ""

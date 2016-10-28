@@ -1,10 +1,14 @@
 # coding: utf-8
 
 from django.conf import settings
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.utils.translation import ugettext_lazy as _
 from imagekit.models import ImageSpecField
 from imagekit.processors import Resize
+from jsonfield import JSONField
 
 
 class Upsale(models.Model):
@@ -68,3 +72,49 @@ class Upsale(models.Model):
     class Meta:
         verbose_name = _(u'Апсейл')
         verbose_name_plural = _(u'Апсейлы')
+
+    def __unicode__(self):
+        return u'%s - %s' % (self.slug, self.title)
+
+
+class UpsaleLink(models.Model):
+    class IS_PAID_CHOICES(object):
+        free = 0
+        paid = 1
+        choices = (
+            (free, 'Free'),
+            (paid, 'Paid'),
+        )
+    limit_models = models.Q(app_label='plp', model='coursesession')
+
+    upsale = models.ForeignKey('Upsale', verbose_name=_(u'Апсейл'), related_name='upsale_links')
+    content_type = models.ForeignKey(ContentType, limit_choices_to=limit_models,
+                                     verbose_name=_(u'Тип объекта, к которому апсейл'))
+    object_id = models.PositiveIntegerField(verbose_name=_(u'Объект, к которому апсейл'))
+    content_object = GenericForeignKey('content_type', 'object_id')
+    is_active = models.BooleanField(verbose_name=_(u'Апсейл активен'), default=True)
+    is_paid = models.PositiveSmallIntegerField(verbose_name=_(u'Объект оплачивается'), choices=IS_PAID_CHOICES.choices)
+    is_detachable = models.BooleanField(verbose_name=_(u'Отделяем от основного объекта'), default=False)
+    price = models.PositiveIntegerField(verbose_name=_(u'Цена'), blank=True, null=True)
+    days_to_buy = models.PositiveSmallIntegerField(
+        verbose_name=_(u'В течение скольких дней с начала сессии возможно купить услугу на текущую сессию?'),
+        blank=True, null=True
+    )
+    days_to_return = models.PositiveSmallIntegerField(
+        verbose_name=_(u'За сколько дней до конца сессии прекращать возврат денег за услугу?'),
+        blank=True, null=True
+    )
+    additional_info = JSONField(blank=True, null=True)
+
+    def get_price(self):
+        return self.price if self.price is not None else self.upsale.price
+
+    class Meta:
+        unique_together = ('content_type', 'object_id', 'upsale')
+
+    def __unicode__(self):
+        try:
+            assert self.content_object is not None
+            return u'%s - %s' % (self.upsale, self.content_object)
+        except (ObjectDoesNotExist, AssertionError):
+            return ''
