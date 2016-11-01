@@ -19,6 +19,10 @@ class Upsale(models.Model):
         getattr(settings, 'UPSALE_ICON_SIZE', (100, 100))[0],
         getattr(settings, 'UPSALE_ICON_SIZE', (100, 100))[1]
     )
+    IMAGE_THUMB_SIZE = (
+        getattr(settings, 'UPSALE_IMAGE_SIZE', (180, 180))[0],
+        getattr(settings, 'UPSALE_IMAGE_SIZE', (180, 180))[1]
+    )
     slug = models.SlugField(verbose_name=_(u'Код'), unique=True)
     title = models.CharField(max_length=255, verbose_name=_(u'Название'))
     short_description = models.CharField(
@@ -40,6 +44,8 @@ class Upsale(models.Model):
         help_text=_(u'Дополнительная информация для отображения на странице продажи апсейлов. Возможно использование html тегов'))
     icon = models.ImageField(verbose_name=_(u'Иконка'), upload_to='upsale_icons')
     icon_thumbnail = ImageSpecField(source='icon', processors=[Resize(*ICON_THUMB_SIZE)])
+    image = models.ImageField(verbose_name=_(u'Изображение услуги'), upload_to='upsale_images')
+    image_thumbnail = ImageSpecField(source='image', processors=[Resize(*IMAGE_THUMB_SIZE)])
     max_per_session = models.PositiveSmallIntegerField(
         default=0,
         verbose_name=_(u'Максимальное количество услуг на 1 сессию'),
@@ -47,6 +53,8 @@ class Upsale(models.Model):
     )
     price = models.PositiveIntegerField(verbose_name=_(u'Стоимость услуги'), default=0,
                                         help_text=_(u'0 - если бесплатно.'))
+    discount_price = models.PositiveIntegerField(verbose_name=_(u'Стоимость услуги со скидкой'), blank=True, null=True,
+                                                 help_text=_(u'Пусто - если нет скидки.'))
     days_to_buy = models.PositiveSmallIntegerField(
         verbose_name=_(u'В течение скольких дней с начала сессии возможно купить услугу на текущую сессию?'),
         blank=True, null=True
@@ -99,6 +107,7 @@ class UpsaleLink(models.Model):
     is_paid = models.PositiveSmallIntegerField(verbose_name=_(u'Объект оплачивается'), choices=IS_PAID_CHOICES.choices)
     is_detachable = models.BooleanField(verbose_name=_(u'Отделяем от основного объекта'), default=False)
     price = models.PositiveIntegerField(verbose_name=_(u'Цена'), blank=True, null=True)
+    discount_price = models.PositiveIntegerField(verbose_name=_(u'Стоимость услуги со скидкой'), blank=True, null=True)
     days_to_buy = models.PositiveSmallIntegerField(
         verbose_name=_(u'В течение скольких дней с начала сессии возможно купить услугу на текущую сессию?'),
         blank=True, null=True
@@ -113,6 +122,13 @@ class UpsaleLink(models.Model):
 
     def get_price(self):
         return self.price if self.price is not None else self.upsale.price
+
+    def get_discount_price(self):
+        return self.discount_price if self.discount_price is not None else self.upsale.discount_price
+
+    def get_payment_price(self):
+        price, discount = self.get_price(), self.get_discount_price()
+        return discount if discount is not None else price
 
     class Meta:
         unique_together = ('content_type', 'object_id', 'upsale')

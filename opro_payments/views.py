@@ -32,7 +32,7 @@ def op_payment_view(request):
         if s and isinstance(s, CourseSession) and s.id == session.id:
             upsales.append(upsale)
     session_price = verified_enrollment.price
-    total_price = session_price + sum([i.get_price() for i in upsales])
+    total_price = session_price + sum([i.get_payment_price() for i in upsales])
 
     if request.method == 'POST' and request.is_ajax():
         # действительно создаем платеж только перед отправкой

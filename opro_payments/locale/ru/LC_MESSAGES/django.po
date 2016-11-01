@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2016-10-28 20:13+0300\n"
+"POT-Creation-Date: 2016-11-01 19:40+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -23,16 +23,24 @@ msgstr ""
 msgid "Длина текста должна быть от {min} до {max} символов"
 msgstr ""
 
-msgid "Введите число от 0 до 999999"
+#, python-brace-format
+msgid "Введите число от {min_val} до {max_val}"
 msgstr ""
 
-msgid "Размер изображения должен быть не больше 1Мб"
+msgid "Размер изображения должен быть не больше {}Мб"
 msgstr ""
 
-msgid "Выберите изображение формата png"
+#, python-format
+msgid "Допустимый формат: %s"
+msgid_plural "Допустимые форматы: %s"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+msgid "Разрешение изображения должно быть не больше {}x{}px"
 msgstr ""
 
-msgid "Разрешение изображения должно быть не больше 1000x1000px"
+msgid "Цена со скидкой превышает цену продукта"
 msgstr ""
 
 #, python-format
@@ -78,6 +86,9 @@ msgstr ""
 msgid "Иконка"
 msgstr ""
 
+msgid "Изображение услуги"
+msgstr ""
+
 msgid "Максимальное количество услуг на 1 сессию"
 msgstr ""
 
@@ -90,6 +101,12 @@ msgid "Стоимость услуги"
 msgstr ""
 
 msgid "0 - если бесплатно."
+msgstr ""
+
+msgid "Стоимость услуги со скидкой"
+msgstr ""
+
+msgid "Пусто - если нет скидки."
 msgstr ""
 
 msgid ""
@@ -167,4 +184,10 @@ msgid "Статус записи"
 msgstr ""
 
 msgid "Записи на объекты"
+msgstr ""
+
+msgid "Оплата"
+msgstr ""
+
+msgid " Курс: "
 msgstr ""

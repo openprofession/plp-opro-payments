@@ -3,12 +3,12 @@
 from django import forms
 from django.contrib.contenttypes.models import ContentType
 from django.core.validators import validate_email
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import ugettext_lazy as _, ungettext_lazy
 import autocomplete_light
 from .models import Upsale, UpsaleLink, ObjectEnrollment
 
 
-class UpsaleForm(forms.ModelForm):
+class UpsaleFormCheckerMixin(object):
     def _check_str_limits(self, attr, len_min, len_max):
         val = self.cleaned_data.get(attr)
         if val and not (20 <= len(val) <= 80):
@@ -17,6 +17,36 @@ class UpsaleForm(forms.ModelForm):
             ))
         return val
 
+    def _check_value_limits(self, attr, min_val, max_val):
+        val = self.cleaned_data.get(attr)
+        if val is not None:
+            if not (min_val <= val <= max_val):
+                raise forms.ValidationError(_(u'Введите число от {min_val} до {max_val}'.format(
+                    min_val=min_val, max_val=max_val)))
+        return val
+
+    def _check_image(self, attr, max_file_size=None, types=None, max_size=None):
+        val = self.cleaned_data.get(attr)
+        if val and hasattr(val, 'image'):
+            image = val.image
+            if max_file_size is not None and val._get_size() > max_file_size * (2**10)**2:
+                raise forms.ValidationError(_(u'Размер изображения должен быть не больше {}Мб').format(max_file_size))
+            if types is not None and image.format not in types:
+                raise forms.ValidationError(
+                    ungettext_lazy(u'Допустимый формат: %s', u'Допустимые форматы: %s', len(types)) % u', '.join(types))
+            if max_size is not None and (image.height > max_size[1] or image.width > max_size[0]):
+                raise forms.ValidationError(_(u'Разрешение изображения должно быть не больше {}x{}px').format(*max_size))
+        return val
+
+    def _check_discount_less_than_price(self):
+        price = self.cleaned_data.get('price')
+        discount_price = self.cleaned_data.get('discount_price')
+        if price is not None and discount_price is not None:
+            if discount_price > price:
+                raise forms.ValidationError(_(u'Цена со скидкой превышает цену продукта'))
+
+
+class UpsaleForm(UpsaleFormCheckerMixin, forms.ModelForm):
     def clean_short_description(self):
         return self._check_str_limits('short_description', 20, 80)
 
@@ -24,23 +54,16 @@ class UpsaleForm(forms.ModelForm):
         return self._check_str_limits('description', 60, 400)
 
     def clean_price(self):
-        val = self.cleaned_data.get('price')
-        if val is not None:
-            if not (0 <= val <= 999999):
-                raise forms.ValidationError(_(u'Введите число от 0 до 999999'))
-        return val
+        return self._check_value_limits('price', 0, 999999)
+
+    def clean_discount_price(self):
+        return self._check_value_limits('discount_price', 0, 999999)
 
     def clean_icon(self):
-        val = self.cleaned_data.get('icon')
-        if val and hasattr(val, 'image'):
-            image = val.image
-            if val._get_size() > (2**10)**2:
-                raise forms.ValidationError(_(u'Размер изображения должен быть не больше 1Мб'))
-            if image.format != 'PNG':
-                raise forms.ValidationError(_(u'Выберите изображение формата png'))
-            if image.height > 1000 or image.width > 1000:
-                raise forms.ValidationError(_(u'Разрешение изображения должно быть не больше 1000x1000px'))
-        return val
+        return self._check_image('icon', max_file_size=1, types=['PNG'], max_size=[1000, 1000])
+
+    def clean_image(self):
+        return self._check_image('image', types=['PNG', 'JPEG'], max_size=[1000, 1000])
 
     def clean_required(self):
         val = self.cleaned_data.get('required')
@@ -59,6 +82,10 @@ class UpsaleForm(forms.ModelForm):
                 raise forms.ValidationError(_(u'В списке содержатся id апсейлов, которых не в системе: %s') % \
                     ', '.join(map(str, diff)))
             return val
+
+    def clean(self):
+        self._check_discount_less_than_price()
+        return super(UpsaleForm, self).clean()
 
     def clean_emails(self):
         vals = self.cleaned_data.get('emails') or ''
@@ -81,7 +108,7 @@ class UpsaleForm(forms.ModelForm):
         }
 
 
-class UpsaleLinkForm(forms.ModelForm):
+class UpsaleLinkForm(UpsaleFormCheckerMixin, forms.ModelForm):
     autocomplete_field = autocomplete_light.ChoiceField(
         autocomplete='UpsaleLinkMulticomplete',
         label=UpsaleLink._meta.get_field('object_id').verbose_name,
@@ -95,7 +122,14 @@ class UpsaleLinkForm(forms.ModelForm):
         self.fields['upsale'] = autocomplete_light.ModelChoiceField(autocomplete='UpsaleAutocomplete')
         self.fields['content_type'].empty_label = None
 
+    def clean_price(self):
+        return self._check_value_limits('price', 0, 999999)
+
+    def clean_discount_price(self):
+        return self._check_value_limits('discount_price', 0, 999999)
+
     def clean(self):
+        self._check_discount_less_than_price()
         data = super(UpsaleLinkForm, self).clean()
         autocomplete = data.get('autocomplete_field')
         content_type = data.get('content_type')
