@@ -1,0 +1,193 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2016-11-01 19:40+0300\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n"
+"%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+
+#, python-brace-format
+msgid "Длина текста должна быть от {min} до {max} символов"
+msgstr ""
+
+#, python-brace-format
+msgid "Введите число от {min_val} до {max_val}"
+msgstr ""
+
+msgid "Размер изображения должен быть не больше {}Мб"
+msgstr ""
+
+#, python-format
+msgid "Допустимый формат: %s"
+msgid_plural "Допустимые форматы: %s"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+msgid "Разрешение изображения должно быть не больше {}x{}px"
+msgstr ""
+
+msgid "Цена со скидкой превышает цену продукта"
+msgstr ""
+
+#, python-format
+msgid "В списке содержатся id апсейлов, которых не в системе: %s"
+msgstr ""
+
+#, python-format
+msgid "В списке содержатся невалидные емейлы: %s"
+msgstr ""
+
+msgid "Тип объекта не совпадает с выбранным объектом"
+msgstr ""
+
+msgid "Тип записи несовместим со способом платежа"
+msgstr ""
+
+msgid "Код"
+msgstr ""
+
+msgid "Название"
+msgstr ""
+
+msgid "Короткое описание"
+msgstr ""
+
+msgid "Отображается везде в интерфейсе рядом с названием"
+msgstr ""
+
+msgid "Полное описание"
+msgstr ""
+
+msgid "Отображается в раскрывающемся окне с подробной информацией по апсейлам"
+msgstr ""
+
+msgid "Дополнительная информация"
+msgstr ""
+
+msgid ""
+"Дополнительная информация для отображения на странице продажи апсейлов. "
+"Возможно использование html тегов"
+msgstr ""
+
+msgid "Иконка"
+msgstr ""
+
+msgid "Изображение услуги"
+msgstr ""
+
+msgid "Максимальное количество услуг на 1 сессию"
+msgstr ""
+
+msgid ""
+"0 - если нет ограничений. 1,2,3... - максимальное количество проданных "
+"апсейлов к 1 сессии курса"
+msgstr ""
+
+msgid "Стоимость услуги"
+msgstr ""
+
+msgid "0 - если бесплатно."
+msgstr ""
+
+msgid "Стоимость услуги со скидкой"
+msgstr ""
+
+msgid "Пусто - если нет скидки."
+msgstr ""
+
+msgid ""
+"В течение скольких дней с начала сессии возможно купить услугу на текущую "
+"сессию?"
+msgstr ""
+
+msgid "За сколько дней до конца сессии прекращать возврат денег за услугу?"
+msgstr ""
+
+msgid "Необходимые услуги"
+msgstr ""
+
+msgid ""
+"Укажите id апсейлов, без которых текущий апсейл не может быть приобретен, "
+"через запятую без пробелов"
+msgstr ""
+
+msgid "Email ответственных за услугу"
+msgstr ""
+
+msgid ""
+"Введите 1 или несколько адресов через запятую. По этим адресам будут "
+"приходить уведомления о записи на данную услугу с контактами пользователя."
+msgstr ""
+
+msgid "Апсейл"
+msgstr ""
+
+msgid "Апсейлы"
+msgstr ""
+
+msgid "Тип объекта, к которому апсейл"
+msgstr ""
+
+msgid "Объект, к которому апсейл"
+msgstr ""
+
+msgid "Апсейл активен"
+msgstr ""
+
+msgid "Объект оплачивается"
+msgstr ""
+
+msgid "Отделяем от основного объекта"
+msgstr ""
+
+msgid "Цена"
+msgstr ""
+
+msgid ""
+"json вида {\"promo\": {\"file\":\"123.txt\", \"already_sent\": 4}}. "
+"\"already_sent\" - служебное поле, не менять"
+msgstr ""
+
+msgid "Пользователь"
+msgstr ""
+
+msgid "Запись на объект"
+msgstr ""
+
+msgid "Тип записи"
+msgstr ""
+
+msgid "Способ платежа"
+msgstr ""
+
+msgid "Номер договора/заказа"
+msgstr ""
+
+msgid "Описание платежа\\заказа"
+msgstr ""
+
+msgid "Статус записи"
+msgstr ""
+
+msgid "Записи на объекты"
+msgstr ""
+
+msgid "Оплата"
+msgstr ""
+
+msgid " Курс: "
+msgstr ""
