@@ -11,7 +11,7 @@ from .models import Upsale, UpsaleLink, ObjectEnrollment
 class UpsaleFormCheckerMixin(object):
     def _check_str_limits(self, attr, len_min, len_max):
         val = self.cleaned_data.get(attr)
-        if val and not (20 <= len(val) <= 80):
+        if val and not (len_min <= len(val) <= len_max):
             raise forms.ValidationError(_(u'Длина текста должна быть от {min} до {max} символов').format(
                 min=len_min, max=len_max
             ))
