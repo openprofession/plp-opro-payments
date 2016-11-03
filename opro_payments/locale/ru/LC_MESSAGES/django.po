@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2016-11-01 19:40+0300\n"
+"POT-Creation-Date: 2016-11-07 16:59+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -55,6 +55,27 @@ msgid "Тип объекта не совпадает с выбранным об�
 msgstr ""
 
 msgid "Тип записи несовместим со способом платежа"
+msgstr ""
+
+msgid "Имя, Фамилия"
+msgstr ""
+
+msgid "Название компании"
+msgstr ""
+
+msgid "Должность"
+msgstr ""
+
+msgid "Телефон"
+msgstr ""
+
+msgid "Сколько людей планируете обучать?"
+msgstr ""
+
+msgid "Комментарий"
+msgstr ""
+
+msgid "Пожалуйста, укажите планируемое число слушателей курсов"
 msgstr ""
 
 msgid "Код"
