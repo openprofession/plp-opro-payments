@@ -90,6 +90,19 @@ def payment_for_user_complete(sender, **kwargs):
     user = User.objects.get(id=user['id'])
     participant, created = Participant.objects.get_or_create(session=session, user=user)
 
+    upsales = UpsaleLink.objects.filter(id__in=upsale_links)
+    for u in upsales:
+        ObjectEnrollment.objects.update_or_create(
+            user=user,
+            upsale=u,
+            defaults={
+                'enrollment_type': ObjectEnrollment.ENROLLMENT_TYPE_CHOICES.paid,
+                'payment_type': ObjectEnrollment.PAYMENT_TYPE_CHOICES.yandex,
+                'payment_order_id': payment.order_number,
+                'is_active': True,
+            }
+        )
+
     try:
         EnrollmentReason.objects.get_or_create(
             participant=participant,
@@ -108,19 +121,6 @@ def payment_for_user_complete(sender, **kwargs):
                 'session_id': session.id,
                 'error': str(e)
             })
-
-    upsales = UpsaleLink.objects.filter(id__in=upsale_links)
-    for u in upsales:
-        ObjectEnrollment.objects.update_or_create(
-            user=user,
-            upsale=u,
-            defaults={
-                'enrollment_type': ObjectEnrollment.ENROLLMENT_TYPE_CHOICES.paid,
-                'payment_type': ObjectEnrollment.PAYMENT_TYPE_CHOICES.yandex,
-                'payment_order_id': payment.order_number,
-                'is_active': True,
-            }
-        )
 
     logging.debug('[payment_for_user_complete] participant=%s new_mode=%s', participant.id, new_mode['mode'])
 
