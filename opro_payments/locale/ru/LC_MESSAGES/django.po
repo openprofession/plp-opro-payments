@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2016-11-07 16:59+0300\n"
+"POT-Creation-Date: 2016-11-10 14:17+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -205,6 +205,39 @@ msgid "Статус записи"
 msgstr ""
 
 msgid "Записи на объекты"
+msgstr ""
+
+#, python-format
+msgid "Здравствуйте, %(name)s!"
+msgstr ""
+
+msgid "Здравствуйте!"
+msgstr ""
+
+msgid ""
+"Мы получили вашу заявку на оплату курса для юридических лиц. <br> В течение "
+"часа в рабочее время специалист OpenProfession с вами свяжется, чтобы "
+"обсудить условия договора и выставления счета."
+msgstr ""
+
+msgid "Мы работаем с 10 до 19 по будням."
+msgstr ""
+
+msgid ""
+"Звоните нам 8 800 500 54 65 (звонок бесплатный) <br> или пишите на "
+"partners@openprofession.ru."
+msgstr ""
+
+#, python-format
+msgid "Мы получили вашу заявку на оплату курса \"%(title)s\""
+msgstr ""
+
+#, python-format
+msgid "Заявка на оплату сессии %(slug)s"
+msgstr ""
+
+#, python-format
+msgid "Заявка на оплату курса \"%(title)s\""
 msgstr ""
 
 msgid "Оплата"

@@ -1,0 +1,39 @@
+{% extends 'email/base.html' %}
+{% load i18n %}
+
+{% block content %}
+    <p>
+        {% if user %}
+            {% blocktrans trimmed with name=user.get_full_name %}
+                Здравствуйте, {{ name }}!
+            {% endblocktrans %}
+        {% else %}
+            {% blocktrans trimmed %}
+                Здравствуйте!
+            {% endblocktrans %}
+        {% endif %}
+    </p>
+
+    <p>
+        {% blocktrans trimmed %}
+            Мы получили вашу заявку на оплату курса для юридических лиц.
+            <br>
+            В течение часа в рабочее время специалист OpenProfession с вами свяжется,
+            чтобы обсудить условия договора и выставления счета.
+        {% endblocktrans %}
+    </p>
+
+    <p>
+        {% blocktrans trimmed %}
+            Мы работаем с 10 до 19 по будням.
+        {% endblocktrans %}
+    </p>
+
+    <p>
+        {% blocktrans trimmed %}
+            Звоните нам 8 800 500 54 65 (звонок бесплатный)
+            <br>
+            или пишите на partners@openprofession.ru.
+        {% endblocktrans %}
+    </p>
+{% endblock %}

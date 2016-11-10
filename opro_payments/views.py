@@ -5,12 +5,16 @@ import logging
 from django.conf import settings
 from django.shortcuts import get_object_or_404, render
 from django.contrib.auth.decorators import login_required
-from django.http import Http404, JsonResponse
+from django.http import Http404, JsonResponse, HttpResponseRedirect
 from django.views.decorators.csrf import csrf_exempt
 from django.core.urlresolvers import reverse
+from django.template.loader import get_template
+from emails.django import Message
 from payments.models import YandexPayment
 from plp.models import CourseSession
 from plp.notifications.base import get_host_url
+from plp.utils.helpers import get_prefix_and_site
+from .forms import CorporatePaymentForm
 from .models import UpsaleLink, ObjectEnrollment
 from .utils import payment_for_user, client
 
@@ -119,3 +123,45 @@ def op_payment_status(request, session_id, user_id, status):
         })
 
     return render(request, template_path, context)
+
+
+def corporate_order_view(request, course_session_id):
+    session = get_object_or_404(CourseSession, id=course_session_id)
+    form = CorporatePaymentForm(request.POST or None)
+    if request.method == 'POST':
+        if form.is_valid():
+            email = getattr(settings, 'OPRO_PAYMENTS_CORPORATE_ORDER_EMAIL', 'Partners@openprofession.ru')
+            msg = Message(
+                subject=get_template('opro_payments/emails/corporate_order_email_subject.txt'),
+                html=get_template('opro_payments/emails/corporate_order_email_html.html'),
+                mail_from=settings.EMAIL_NOTIFICATIONS_FROM,
+                mail_to=form.cleaned_data['email'],
+                headers={'Reply-To': email}
+            )
+            context = {
+                'user': request.user if request.user.is_authenticated() else None,
+                'session': session,
+            }
+            context.update(get_prefix_and_site())
+            msg.send(context={'context': context, 'request': request})
+
+            msg = Message(
+                subject=get_template('opro_payments/emails/corporate_order_ticket_subject.txt'),
+                html=get_template('opro_payments/emails/corporate_order_ticket_message.html'),
+                mail_from=settings.EMAIL_NOTIFICATIONS_FROM,
+                mail_to=email
+            )
+            context = {
+                'form': form,
+                'session': session
+            }
+            msg.send(context={'context': context, 'request': request})
+            # TODO: thank you page
+            # return HttpResponseRedirect(reverse(''))
+            return HttpResponseRedirect(reverse('op_payment_corporate_order', kwargs={'course_session_id': course_session_id}))
+    context = {
+        'form': form,
+        'session': session,
+        'object': session.course,
+    }
+    return render(request, 'opro_payments/corporate_order.html', context)

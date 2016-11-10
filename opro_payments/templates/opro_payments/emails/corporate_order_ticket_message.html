@@ -1,0 +1,11 @@
+{% load i18n %}
+
+<p>
+    {% blocktrans trimmed with slug=session.get_absolute_slug_v1 %}
+    Заявка на оплату сессии {{ slug }}
+    {% endblocktrans %}
+</p>
+
+{% for field in form %}
+    <p>{{ field.label }}: {{ field.value }}</p>
+{% endfor %}
