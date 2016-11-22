@@ -13,7 +13,7 @@ from emails.django import Message
 from payments.models import YandexPayment
 from plp.models import CourseSession
 from plp.notifications.base import get_host_url
-from plp_edmodule.models import EducationalModule
+from plp_edmodule.models import EducationalModule, EducationalModuleEnrollmentReason
 from plp.utils.helpers import get_prefix_and_site
 from .forms import CorporatePaymentForm
 from .models import UpsaleLink, ObjectEnrollment
@@ -45,10 +45,21 @@ def op_payment_view(request):
         if s and isinstance(s, obj_model) and s.id == obj.id:
             upsales.append(upsale)
 
+    obj_is_paid = False
+    paid_upsales = [i.upsale for i in
+                    ObjectEnrollment.objects.filter(upsale__in=upsales, user=request.user).select_related('upsale')]
+
     first_session_id = None
     if session_id:
+        if verified_enrollment.is_user_enrolled(request.user):
+            obj_is_paid = True
         obj_price = verified_enrollment.price
     else:
+        obj_is_paid = EducationalModuleEnrollmentReason.objects.filter(
+            enrollment__user=request.user,
+            enrollment__module__id=module_id,
+            full_paid=not only_first_course
+        ).exists()
         if only_first_course:
             try:
                 session, price = obj.get_first_session_to_buy(request.user)
@@ -58,13 +69,13 @@ def op_payment_view(request):
             first_session_id = session.id
         else:
             obj_price = obj.get_price_list(request.user)['whole_price']
-    total_price = obj_price + sum([i.get_payment_price() for i in upsales])
+    total_price = 0 if obj_is_paid else obj_price
+    total_price += sum([i.get_payment_price() for i in upsales if i not in paid_upsales])
 
     if request.method == 'POST' and request.is_ajax():
         # действительно создаем платеж только перед отправкой
-        if total_price:
-            payment_for_user(request.user, verified_enrollment, upsales, total_price,
-                             only_first_course=only_first_course, first_session_id=first_session_id)
+        payment_for_user(request.user, verified_enrollment, upsales, total_price,
+                         only_first_course=only_first_course, first_session_id=first_session_id)
         return JsonResponse({'status': 0})
 
     payment = payment_for_user(request.user, verified_enrollment, upsales, total_price, create=False,
@@ -86,6 +97,9 @@ def op_payment_view(request):
     context = {
         'upsale_links': upsales,
         'total_price': total_price,
+        'obj_price': obj_price,
+        'obj_is_paid': obj_is_paid,
+        'paid_upsales': paid_upsales,
         'fields': {
             "shopId": settings.YANDEX_MONEY_SHOP_ID,
             "scid": settings.YANDEX_MONEY_SCID,
