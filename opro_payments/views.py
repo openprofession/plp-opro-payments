@@ -220,9 +220,7 @@ def corporate_order_view(request, course_session_id):
                 'session': session
             }
             msg.send(context={'context': context, 'request': request})
-            # TODO: thank you page
-            # return HttpResponseRedirect(reverse(''))
-            return HttpResponseRedirect(reverse('op_payment_corporate_order', kwargs={'course_session_id': course_session_id}))
+            return HttpResponseRedirect(reverse('op_payment_corporate_order_done'))
     context = {
         'form': form,
         'session': session,
