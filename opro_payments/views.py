@@ -135,22 +135,27 @@ def op_payment_view(request):
 @csrf_exempt
 @login_required
 def op_payment_status(request, payment_type, obj_id, user_id, status):
-    # TODO: payment_type == edmodule
     # не показываем чужие промокоды
     if str(request.user.id) != user_id:
         raise Http404
 
     template_path = "profile/payment_{}.html".format(status)
 
-    session = get_object_or_404(CourseSession, id=obj_id)
+    obj_model = CourseSession if payment_type == 'session' else EducationalModule
+
+    obj = get_object_or_404(obj_model, id=obj_id)
     user = request.user
 
-    context = {
-        'session': session,
-    }
+    if payment_type == 'session':
+        context = {'session': obj, 'object': obj.course}
+    else:
+        context = {'module': obj, 'object': obj}
 
     if status == 'success':
-        order_number = "{}-{}-{}-".format('verified', session.id, user.id)
+        if payment_type == 'session':
+            order_number = "{}-{}-{}-".format('verified', obj.id, user.id)
+        else:
+            order_number = "edmodule-{}-{}-".format(obj.id, user.id)
         # считаем, что к моменту перехода на страницу подтверждения оплаты, нам пришел ответ от Яндекса
         # и были созданы "записи на объекты", иначе пользователь не увидит промокоды
         payment = YandexPayment.objects.filter(order_number__startswith=order_number).order_by('-id').first()
@@ -178,6 +183,8 @@ def op_payment_status(request, payment_type, obj_id, user_id, status):
             'upsale_links': upsales,
             'shop_url': getattr(settings, 'OPRO_PAYMENT_SHOP_URL', ''),
         })
+        if metadata.get('edmodule', {}).get('first_session_id'):
+            context['first_session'] = get_object_or_404(CourseSession, id=metadata['edmodule']['first_session_id'])
 
     return render(request, template_path, context)
 
