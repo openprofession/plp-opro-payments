@@ -2,14 +2,17 @@
 
 import json
 import logging
+import time
 from django.conf import settings
 from django.utils import timezone
 from raven import Client
 from payments.helpers import payment_for_participant_complete
 from payments.models import YandexPayment
 from payments.sources.yandex_money.signals import payment_completed
-from plp.models import Participant, EnrollmentReason, SessionEnrollmentType, User
+from plp.models import Participant, EnrollmentReason, SessionEnrollmentType, User, CourseSession
 from plp.utils.edx_enrollment import EDXEnrollmentError
+from plp_edmodule.models import EducationalModuleEnrollmentType, EducationalModuleEnrollment, \
+    EducationalModuleEnrollmentReason
 from .models import UpsaleLink, ObjectEnrollment
 
 RAVEN_CONFIG = getattr(settings, 'RAVEN_CONFIG', {})
@@ -19,26 +22,40 @@ if RAVEN_CONFIG:
     client = Client(RAVEN_CONFIG.get('dsn'))
 
 
-def payment_for_user(user, enrollment_type, upsale_links, price, create=True):
+def payment_for_user(user, enrollment_type, upsale_links, price, create=True, only_first_course=False,
+                     first_session_id=None):
     assert enrollment_type.active == True
     # Яндекс-Касса не даст провести оплату два раза по одному и тому же order_number
     upsales = '-'.join([str(i.id) for i in upsale_links])
-    order_number = "{}-{}-{}-{}".format(enrollment_type.mode, enrollment_type.session.id, user.id, upsales)
+    if isinstance(enrollment_type, SessionEnrollmentType):
+        order_number = "{}-{}-{}-{}".format(enrollment_type.mode, enrollment_type.session.id, user.id, upsales)
+    else:
+        order_number = "edmodule-{}-{}-{}-{}".format(
+            enrollment_type.module.id, user.id, int(time.time()), upsales)
     if len(order_number) > 64:
         logging.info('Order number exceeds max length: %s' % order_number)
         order_number = order_number[:64]
 
     metadata = {
-        'new_mode': {
-            'id': enrollment_type.id,
-            'mode': enrollment_type.mode
-        },
         'user': {
             'id': user.id,
             'username': user.username
         },
         'upsale_links': [i.id for i in upsale_links],
     }
+    if isinstance(enrollment_type, SessionEnrollmentType):
+        metadata['new_mode'] = {
+            'id': enrollment_type.id,
+            'mode': enrollment_type.mode
+        }
+    else:
+        metadata['edmodule'] = {
+            'id': enrollment_type.module.id,
+            'mode': enrollment_type.mode,
+            'only_first_course': only_first_course
+        }
+        if only_first_course:
+            metadata['edmodule']['first_session_id'] = first_session_id
 
     try:
         payment = YandexPayment.objects.get(order_number=order_number)
@@ -77,11 +94,15 @@ def payment_for_user_complete(sender, **kwargs):
     user = metadata.get('user')
     new_mode = metadata.get('new_mode')
     upsale_links = metadata.get('upsale_links')
+    edmodule = metadata.get('edmodule')
 
-    if not (user and new_mode['mode'] and upsale_links is not None):
-        logging.info("[payment_for_user_complete] skip payment %s with metadata=%s", payment, metadata)
-        return
+    if (user and new_mode and upsale_links is not None):
+        return _payment_for_session_complete(payment, metadata, user, new_mode, upsale_links)
+    elif (user and edmodule and upsale_links is not None):
+        return _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links)
 
+
+def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_links):
     logging.info('[payment_for_user_complete] got payment information from yandex.kassa: metadata=%s payment=%s',
                  metadata, payment)
 
@@ -89,6 +110,64 @@ def payment_for_user_complete(sender, **kwargs):
     session = enr_type.session
     user = User.objects.get(id=user['id'])
     participant, created = Participant.objects.get_or_create(session=session, user=user)
+
+    upsales = UpsaleLink.objects.filter(id__in=upsale_links)
+    promocodes = []
+    for u in upsales:
+        obj, created = ObjectEnrollment.objects.update_or_create(
+            user=user,
+            upsale=u,
+            defaults={
+                'enrollment_type': ObjectEnrollment.ENROLLMENT_TYPE_CHOICES.paid,
+                'payment_type': ObjectEnrollment.PAYMENT_TYPE_CHOICES.yandex,
+                'payment_order_id': payment.order_number,
+                'is_active': True,
+            }
+        )
+        if created:
+            data = obj.jsonfield or {}
+            promo = data.get('promo_code')
+            if promo:
+                promocodes.append((u.upsale.title, promo))
+
+    params = dict(
+        participant=participant,
+        session_enrollment_type=enr_type,
+        payment_type=EnrollmentReason.PAYMENT_TYPE.YAMONEY,
+        payment_order_id=payment.order_number,
+    )
+    if not EnrollmentReason.objects.filter(**params).exists():
+        try:
+            paid_for_session = EnrollmentReason.objects.filter(
+                participant=participant,
+                session_enrollment_type__mode='verified'
+            ).exists()
+            reason = EnrollmentReason.objects.create(**params)
+            Participant.objects.filter(id=participant.id).update(sent_to_edx=timezone.now())
+            reason.send_confirmation_email(upsales=upsales, promocodes=promocodes, paid_for_session=paid_for_session)
+        except EDXEnrollmentError as e:
+            logging.error('Failed to push verified enrollment %s to edx for user %s: %s' % (
+                session, user, e
+            ))
+            if client:
+                client.captureMessage('Failed to push verified enrollment to edx', extra={
+                    'user': user.username,
+                    'session_id': session.id,
+                    'error': str(e)
+                })
+
+    logging.debug('[payment_for_user_complete] participant=%s new_mode=%s', participant.id, new_mode['mode'])
+
+
+def _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links):
+    logging.info('[payment_for_user_complete] got payment information from yandex.kassa: metadata=%s payment=%s',
+                 metadata, payment)
+
+    enr_type = EducationalModuleEnrollmentType.objects.get(module__id=edmodule['id'], mode=edmodule['mode'])
+    module = enr_type.module
+    user = User.objects.get(id=user['id'])
+    enrollment, created = EducationalModuleEnrollment.objects.update_or_create(
+        module=module, user=user, defaults={'is_paid': True, 'is_active': True})
 
     upsales = UpsaleLink.objects.filter(id__in=upsale_links)
     for u in upsales:
@@ -102,27 +181,42 @@ def payment_for_user_complete(sender, **kwargs):
                 'is_active': True,
             }
         )
+    EducationalModuleEnrollmentReason.objects.get_or_create(
+        enrollment=enrollment,
+        module_enrollment_type=enr_type,
+        payment_type=EducationalModuleEnrollmentReason.PAYMENT_TYPE.YAMONEY,
+        payment_order_id=payment.order_number,
+        full_paid=not edmodule['only_first_course']
+    )
 
-    try:
-        EnrollmentReason.objects.get_or_create(
+    if edmodule['only_first_course'] and edmodule.get('first_session_id'):
+        session = CourseSession.objects.get(id=edmodule['first_session_id'])
+        participant, created = Participant.objects.get_or_create(session=session, user=user)
+        session_enr_type = SessionEnrollmentType.objects.get(session=session, mode='verified')
+        params = dict(
             participant=participant,
-            session_enrollment_type=enr_type,
+            session_enrollment_type=session_enr_type,
             payment_type=EnrollmentReason.PAYMENT_TYPE.YAMONEY,
             payment_order_id=payment.order_number,
         )
-        Participant.objects.filter(id=participant.id).update(sent_to_edx=timezone.now())
-    except EDXEnrollmentError as e:
-        logging.error('Failed to push verified enrollment %s to edx for user %s: %s' % (
-            session, user, e
-        ))
-        if client:
-            client.captureMessage('Failed to push verified enrollment to edx', extra={
-                'user': user.username,
-                'session_id': session.id,
-                'error': str(e)
-            })
+        if not EnrollmentReason.objects.filter(**params).exists():
+            try:
+                reason = EnrollmentReason.objects.create(**params)
+                Participant.objects.filter(id=participant.id).update(sent_to_edx=timezone.now())
+                reason.send_confirmation_email()
+            except EDXEnrollmentError as e:
+                logging.error('Failed to push verified enrollment %s to edx for user %s: %s' % (
+                    session, user, e
+                ))
+                if client:
+                    client.captureMessage('Failed to push verified enrollment to edx', extra={
+                        'user': user.username,
+                        'session_id': session.id,
+                        'error': str(e)
+                    })
 
-    logging.debug('[payment_for_user_complete] participant=%s new_mode=%s', participant.id, new_mode['mode'])
+    logging.debug('[payment_for_user_complete] enrollment=%s new_mode=%s', enrollment.id, edmodule['mode'])
+
 
 payment_completed.disconnect(payment_for_participant_complete)
 payment_completed.connect(payment_for_user_complete)
