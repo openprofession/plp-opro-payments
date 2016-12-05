@@ -3,6 +3,7 @@
 import os
 import linecache
 import logging
+import json
 from django.conf import settings
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
@@ -147,6 +148,17 @@ class UpsaleLink(models.Model):
         if path is None:
             return os.path.dirname(os.path.dirname(settings.BASE_DIR))
         return path
+
+    def to_json(self):
+        return json.dumps({
+            'id': self.id,
+            'cost': self.get_payment_price(),
+            'title': self.upsale.title,
+            'discount_price': self.get_discount_price(),
+            'price': self.get_price(),
+            'image_url': self.upsale.image_thumbnail and self.upsale.image_thumbnail.url,
+            'description': self.upsale.description,
+        }, ensure_ascii=False)
 
 
 class ObjectEnrollment(models.Model):
