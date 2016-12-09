@@ -19,6 +19,8 @@ from .forms import CorporatePaymentForm
 from .models import UpsaleLink, ObjectEnrollment
 from .utils import payment_for_user, client
 
+PAYMENT_SESSION_KEY = 'opro_payment_current_order'
+
 
 @login_required
 def op_payment_view(request):
@@ -83,12 +85,18 @@ def op_payment_view(request):
 
     if request.method == 'POST' and request.is_ajax():
         # действительно создаем платеж только перед отправкой
-        payment_for_user(request.user, verified_enrollment, set(upsales) - set(paid_upsales), total_price,
-                         only_first_course=only_first_course, first_session_id=first_session_id)
-        return JsonResponse({'status': 0})
+        try:
+            order_number = request.session.get(PAYMENT_SESSION_KEY)
+            payment_for_user(request.user, verified_enrollment, set(upsales) - set(paid_upsales), total_price,
+                             only_first_course=only_first_course, first_session_id=first_session_id, order_number=order_number)
+            del request.session[PAYMENT_SESSION_KEY]
+            return JsonResponse({'status': 0})
+        except:
+            return JsonResponse({'status': 1})
 
     payment = payment_for_user(request.user, verified_enrollment, set(upsales) - set(paid_upsales), total_price, create=False,
                                only_first_course=only_first_course, first_session_id=first_session_id)
+    request.session[PAYMENT_SESSION_KEY] = payment.order_number
     host_url = get_host_url(request)
     payment_fail = host_url + reverse('op_payment_status', kwargs={
         'status': 'fail',
