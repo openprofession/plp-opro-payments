@@ -13,6 +13,7 @@ from plp.models import Participant, EnrollmentReason, SessionEnrollmentType, Use
 from plp.utils.edx_enrollment import EDXEnrollmentError
 from plp_edmodule.models import EducationalModuleEnrollmentType, EducationalModuleEnrollment, \
     EducationalModuleEnrollmentReason
+from plp_edmodule.signals import edmodule_payed
 from .models import UpsaleLink, ObjectEnrollment
 
 RAVEN_CONFIG = getattr(settings, 'RAVEN_CONFIG', {})
@@ -169,12 +170,13 @@ def _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links
     enr_type = EducationalModuleEnrollmentType.objects.get(module__id=edmodule['id'], mode=edmodule['mode'])
     module = enr_type.module
     user = User.objects.get(id=user['id'])
-    enrollment, created = EducationalModuleEnrollment.objects.update_or_create(
+    enrollment, new_enrollment = EducationalModuleEnrollment.objects.update_or_create(
         module=module, user=user, defaults={'is_paid': True, 'is_active': True})
 
     upsales = UpsaleLink.objects.filter(id__in=upsale_links)
+    promocodes, bought_upsales = [], []
     for u in upsales:
-        ObjectEnrollment.objects.update_or_create(
+        bought_upsale, _created = ObjectEnrollment.objects.update_or_create(
             user=user,
             upsale=u,
             defaults={
@@ -184,13 +186,21 @@ def _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links
                 'is_active': True,
             }
         )
-    EducationalModuleEnrollmentReason.objects.get_or_create(
+        if _created:
+            bought_upsales.append(u)
+            data = bought_upsale.jsonfield or {}
+            promo = data.get('promo_code')
+            if promo:
+                promocodes.append((u.upsale.title, promo))
+    edmodule_reason, created = EducationalModuleEnrollmentReason.objects.get_or_create(
         enrollment=enrollment,
         module_enrollment_type=enr_type,
         payment_type=EducationalModuleEnrollmentReason.PAYMENT_TYPE.YAMONEY,
         payment_order_id=payment.order_number,
         full_paid=not edmodule['only_first_course']
     )
+    edmodule_payed.send(EducationalModuleEnrollmentReason, instance=edmodule_reason,
+                        new_enrollment=new_enrollment, promocodes=promocodes, upsale_links=bought_upsales)
 
     if edmodule['only_first_course'] and edmodule.get('first_session_id'):
         session = CourseSession.objects.get(id=edmodule['first_session_id'])
