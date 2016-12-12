@@ -23,15 +23,18 @@ if RAVEN_CONFIG:
 
 
 def payment_for_user(user, enrollment_type, upsale_links, price, create=True, only_first_course=False,
-                     first_session_id=None):
+                     first_session_id=None, order_number=None):
     assert enrollment_type.active == True
     # Яндекс-Касса не даст провести оплату два раза по одному и тому же order_number
     upsales = '-'.join([str(i.id) for i in upsale_links])
     if isinstance(enrollment_type, SessionEnrollmentType):
         order_number = "{}-{}-{}-{}".format(enrollment_type.mode, enrollment_type.session.id, user.id, upsales)
     else:
-        order_number = "edmodule-{}-{}-{}-{}".format(
-            enrollment_type.module.id, user.id, int(time.time()), upsales)
+        if create and order_number:
+            order_number = order_number
+        else:
+            order_number = "edmodule-{}-{}-{}-{}".format(
+                enrollment_type.module.id, user.id, int(time.time()), upsales)
     if len(order_number) > 64:
         logging.info('Order number exceeds max length: %s' % order_number)
         order_number = order_number[:64]
