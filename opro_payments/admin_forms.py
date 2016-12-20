@@ -109,10 +109,10 @@ class UpsaleForm(UpsaleFormCheckerMixin, forms.ModelForm):
 
 
 class UpsaleLinkForm(UpsaleFormCheckerMixin, forms.ModelForm):
-    autocomplete_field = autocomplete_light.ChoiceField(
-        autocomplete='UpsaleLinkMulticomplete',
-        label=UpsaleLink._meta.get_field('object_id').verbose_name,
-    )
+    #autocomplete_field = autocomplete_light.ChoiceField(
+    #    autocomplete='UpsaleLinkMulticomplete',
+    #    label=UpsaleLink._meta.get_field('object_id').verbose_name,
+    #)
 
     def __init__(self, *args, **kwargs):
         super(UpsaleLinkForm, self).__init__(*args, **kwargs)
