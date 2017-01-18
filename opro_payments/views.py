@@ -26,6 +26,7 @@ PAYMENT_SESSION_KEY = 'opro_payment_current_order'
 def op_payment_view(request):
     session_id = request.GET.get('course_session_id', '')
     module_id = request.GET.get('edmodule_id', '')
+    utm_data = request.GET.get('_utm_data', '')
     only_first_course = bool(request.GET.get('only_first_course', False))
     if bool(session_id) == bool(module_id):
         # ожидаем или course_session_id или module_id
@@ -110,6 +111,8 @@ def op_payment_view(request):
         'user_id': request.user.id,
         'payment_type': 'session' if session_id else 'edmodule',
     })
+    if utm_data:
+        payment_success = '{}?{}'.format(payment_success, utm_data)
 
     context = {
         'upsale_links': upsales,
