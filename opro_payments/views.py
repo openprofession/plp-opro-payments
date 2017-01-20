@@ -207,11 +207,15 @@ def op_payment_status(request, payment_type, obj_id, user_id, status):
     return render(request, template_path, context)
 
 
-def corporate_order_view(request, course_session_id):
+def corporate_order_view(request, order_type, obj_id):
     """
     Страница заявки на оплату сессии/модуля юр. лицом
     """
-    session = get_object_or_404(CourseSession, id=course_session_id)
+    if order_type == 'session':
+        cls = CourseSession
+    else:
+        cls = EducationalModule
+    obj = get_object_or_404(cls, id=obj_id)
     form = CorporatePaymentForm(request.POST or None)
     if request.method == 'POST':
         if form.is_valid():
@@ -225,7 +229,8 @@ def corporate_order_view(request, course_session_id):
             )
             context = {
                 'user': request.user if request.user.is_authenticated() else None,
-                'session': session,
+                'order_type': order_type,
+                'object': obj,
             }
             context.update(get_prefix_and_site())
             msg.send(context={'context': context, 'request': request})
@@ -238,13 +243,17 @@ def corporate_order_view(request, course_session_id):
             )
             context = {
                 'form': form,
-                'session': session
+                'order_type': order_type,
+                'object': obj,
             }
             msg.send(context={'context': context, 'request': request})
-            return HttpResponseRedirect(reverse('op_payment_corporate_order_done'))
+            return HttpResponseRedirect(reverse('op_payment_corporate_order_done', kwargs={'order_type': order_type}))
     context = {
         'form': form,
-        'session': session,
-        'object': session.course,
+        'object': obj.course if order_type == 'session' else obj,
     }
+    if order_type == 'session':
+        context['session'] = obj
+    else:
+        context['module'] = obj
     return render(request, 'opro_payments/corporate_order.html', context)

@@ -1,1 +1,1 @@
-{% load i18n %}{% blocktrans with title=session.course.title %}Мы получили вашу заявку на оплату курса "{{ title }}"{% endblocktrans %}
+{% load i18n %}{% if order_type == 'session' %}{% blocktrans with title=object.course.title %}Мы получили вашу заявку на оплату курса "{{ title }}"{% endblocktrans %}{% else %}{% blocktrans with title=object.title %}Мы получили вашу заявку на оплату специализации "{{ title }}"{% endblocktrans %}{% endif %}

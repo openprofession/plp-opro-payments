@@ -1,9 +1,15 @@
 {% load i18n %}
 
 <p>
-    {% blocktrans trimmed with slug=session.get_absolute_slug_v1 %}
+    {% if order_type == 'session' %}
+    {% blocktrans trimmed with slug=object.get_absolute_slug_v1 %}
     Заявка на оплату сессии {{ slug }}
     {% endblocktrans %}
+    {% else %}
+    {% blocktrans trimmed with slug=object.code %}
+    Заявка на оплату специализации {{ slug }}
+    {% endblocktrans %}
+    {% endif %}
 </p>
 
 {% for field in form %}
