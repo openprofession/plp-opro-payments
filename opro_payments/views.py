@@ -24,6 +24,9 @@ PAYMENT_SESSION_KEY = 'opro_payment_current_order'
 
 @login_required
 def op_payment_view(request):
+    """
+    Страница подтверждения оплаты сессии или модуля
+    """
     session_id = request.GET.get('course_session_id', '')
     module_id = request.GET.get('edmodule_id', '')
     utm_data = request.GET.get('_utm_data', '')
@@ -146,6 +149,10 @@ def op_payment_view(request):
 @csrf_exempt
 @login_required
 def op_payment_status(request, payment_type, obj_id, user_id, status):
+    """
+    страница payment success/fail, на которую редиректится пользователь после
+    оплаты в яндекс кассе
+    """
     # не показываем чужие промокоды
     if str(request.user.id) != user_id:
         raise Http404
@@ -201,6 +208,9 @@ def op_payment_status(request, payment_type, obj_id, user_id, status):
 
 
 def corporate_order_view(request, course_session_id):
+    """
+    Страница заявки на оплату сессии/модуля юр. лицом
+    """
     session = get_object_or_404(CourseSession, id=course_session_id)
     form = CorporatePaymentForm(request.POST or None)
     if request.method == 'POST':

@@ -199,8 +199,12 @@ class ObjectEnrollment(models.Model):
         return u'%s - %s' % (self.user, self.upsale)
 
     def save(self, **kwargs):
+        """
+        для новых объектов записывается соответствующий промокод из UpsaleLink,
+        если указан файл с промокодами и количество выданных промокодов не исчерпано
+        """
         if self.id:
-            super(ObjectEnrollment, self).save()
+            super(ObjectEnrollment, self).save(**kwargs)
             return
         with transaction.atomic():
             info = UpsaleLink.objects.get(id=self.upsale_id).additional_info or {}
@@ -221,4 +225,4 @@ class ObjectEnrollment(models.Model):
                     self.jsonfield = {'promo_code': code}
                     self.upsale.additional_info = info
                     self.upsale.save()
-            super(ObjectEnrollment, self).save()
+            super(ObjectEnrollment, self).save(**kwargs)

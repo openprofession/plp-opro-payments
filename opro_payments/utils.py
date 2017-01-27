@@ -25,6 +25,18 @@ if RAVEN_CONFIG:
 
 def payment_for_user(user, enrollment_type, upsale_links, price, create=True, only_first_course=False,
                      first_session_id=None, order_number=None):
+    """
+    Создание объекта YandexPayment для пользователя с сохранением в бд или без
+    :param user: объект User
+    :param enrollment_type: SessionEnrollmentType или EducationalModuleEnrollmentType
+    :param upsale_links: список UpsaleLink
+    :param price: int
+    :param create: bool - сохранять созданый объект или нет
+    :param only_first_course: bool - используется в случае оплаты модуля
+    :param first_session_id: int - обязательный аргумент в случае only_first_course=True
+    :param order_number: str - взять заданный order_number вместо его генерации (действует только для модуля)
+    :return: YandexPayment
+    """
     assert enrollment_type.active == True
     # Яндекс-Касса не даст провести оплату два раза по одному и тому же order_number
     upsales = '-'.join([str(i.id) for i in upsale_links])
@@ -32,6 +44,8 @@ def payment_for_user(user, enrollment_type, upsale_links, price, create=True, on
         order_number = "{}-{}-{}-{}".format(enrollment_type.mode, enrollment_type.session.id, user.id, upsales)
     else:
         if create and order_number:
+            # запись ранее сгенерированного order_number во избежание ошибки несовпадения этого параметра
+            # вследствие использования int(time.time()) как часть order_number
             order_number = order_number
         else:
             order_number = "edmodule-{}-{}-{}-{}".format(

@@ -9,6 +9,9 @@ from .models import Upsale, UpsaleLink, ObjectEnrollment
 
 
 class UpsaleFormCheckerMixin(object):
+    """
+    миксин с общими проверками для форм Upsale и UpsaleLink
+    """
     def _check_str_limits(self, attr, len_min, len_max):
         val = self.cleaned_data.get(attr)
         if val and not (len_min <= len(val) <= len_max):
