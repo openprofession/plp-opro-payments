@@ -251,6 +251,7 @@ def corporate_order_view(request, order_type, obj_id):
     context = {
         'form': form,
         'object': obj.course if order_type == 'session' else obj,
+        'order_type': order_type,
     }
     if order_type == 'session':
         context['session'] = obj
