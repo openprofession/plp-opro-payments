@@ -3,8 +3,10 @@
 import json
 import logging
 import time
+import urllib
 from django.conf import settings
 from django.utils import timezone
+import requests
 from raven import Client
 from payments.helpers import payment_for_participant_complete
 from payments.models import YandexPayment
@@ -12,7 +14,7 @@ from payments.sources.yandex_money.signals import payment_completed
 from plp.models import Participant, EnrollmentReason, SessionEnrollmentType, User, CourseSession
 from plp.utils.edx_enrollment import EDXEnrollmentError
 from plp_edmodule.models import EducationalModuleEnrollmentType, EducationalModuleEnrollment, \
-    EducationalModuleEnrollmentReason
+    EducationalModuleEnrollmentReason, EducationalModule
 from plp_edmodule.signals import edmodule_payed
 from .models import UpsaleLink, ObjectEnrollment
 
@@ -75,6 +77,15 @@ def payment_for_user(user, enrollment_type, upsale_links, price, create=True, on
         if only_first_course:
             metadata['edmodule']['first_session_id'] = first_session_id
 
+    # add google analytics
+    if create:
+        if isinstance(enrollment_type, SessionEnrollmentType):
+            data = prepare_ga_data(order_number, user, price, enrollment_type.session)
+        else:
+            fsi = first_session_id if only_first_course else None
+            data = prepare_ga_data(order_number, user, price, enrollment_type.module, fsi)
+        metadata['google_analytics'] = data
+
     try:
         payment = YandexPayment.objects.get(order_number=order_number)
         if payment.order_amount != price:
@@ -115,9 +126,10 @@ def payment_for_user_complete(sender, **kwargs):
     edmodule = metadata.get('edmodule')
 
     if (user and new_mode and upsale_links is not None):
-        return _payment_for_session_complete(payment, metadata, user, new_mode, upsale_links)
+        _payment_for_session_complete(payment, metadata, user, new_mode, upsale_links)
     elif (user and edmodule and upsale_links is not None):
-        return _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links)
+        _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links)
+    push_google_analytics_for_payment(payment)
 
 
 def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_links):
@@ -243,6 +255,116 @@ def _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links
                     })
 
     logging.debug('[payment_for_user_complete] enrollment=%s new_mode=%s', enrollment.id, edmodule['mode'])
+
+
+def prepare_ga_data(order_number, user, price, obj, first_session_id=None):
+    """
+    Подготовка массива строк с данными для гугл аналитики
+    """
+    try:
+        google_id = settings.GOOGLE_ANALYTICS_ID
+    except AttributeError:
+        if client:
+            client.captureMessage('settings.GOOGLE_ANALYTICS_ID is not set')
+        logging.error('settings.GOOGLE_ANALYTICS_ID is not set')
+        return []
+    params = {
+        'v': '1',
+        'tid': google_id,
+        'cid': user.id,
+        'ti': order_number,
+        'cu': 'RUB',
+    }
+    data = []
+    # transaction
+    _params = params.copy()
+    _params.update({
+        't': 'transaction',
+        'tr': price,
+    })
+    data.append(_params)
+    # items
+    if isinstance(obj, CourseSession):
+        _params = params.copy()
+        _params.update({
+            't': 'item',
+            'in': obj.course.title,
+            'ic': obj.course.slug,
+            'iv': 'course',
+            'ip': obj.get_verified_mode_price(),
+        })
+        data.append(_params)
+    elif isinstance(obj, EducationalModule):
+        if first_session_id:
+            session = CourseSession.objects.get(id=first_session_id)
+            session_price = session.get_verified_mode_price()
+            _params = params.copy()
+            _params.update({
+                't': 'item',
+                'in': obj.title,
+                'ic': obj.code,
+                'iv': 'edmodule',
+                'ip': session_price,
+            })
+            data.append(_params)
+
+            _params = params.copy()
+            session = CourseSession.objects.get(id=first_session_id)
+            _params.update({
+                't': 'item',
+                'in': session.course.title,
+                'ic': session.course.slug,
+                'iv': 'course',
+                'ip': session_price,
+            })
+            data.append(_params)
+        else:
+            price_data = obj.get_price_list(user)
+            _params = params.copy()
+            _params.update({
+                't': 'item',
+                'in': obj.title,
+                'ic': obj.code,
+                'iv': 'edmodule',
+                'ip': price_data['whole_price'],
+            })
+            data.append(_params)
+            for course, course_price in price_data.get('courses', []):
+                if not course_price:
+                    continue
+                _params = params.copy()
+                _params.update({
+                    't': 'item',
+                    'in': course.title,
+                    'ic': course.slug,
+                    'iv': 'course',
+                    'ip': course_price,
+                })
+                data.append(_params)
+    return data
+
+
+def push_google_analytics_for_payment(payment):
+    """
+    получение массива строк гугл аналитики из данных платежа и отправка на сервер
+    """
+    def _prepare_str(params):
+        return urllib.urlencode({k: unicode(v).encode('utf-8') for k, v in params.iteritems()})
+
+    url = 'https://www.google-analytics.com/batch'
+    metadata = json.loads(payment.metadata)
+    data = metadata.get('google_analytics', [])
+    data = map(_prepare_str, data)
+    if data:
+        try:
+            requests.post(url, data=u'\n'.join(data), timeout=settings.CONNECTION_TIMEOUT)
+        except requests.RequestException as e:
+            if client:
+                client.captureMessage('Failed to send google analytics data', extra={
+                    'payment_id': payment.id,
+                    'exception': str(e),
+                })
+                logging.error('Failed to send google analytics data for payment %s: %s' % (payment.id, e))
 
 
 payment_completed.disconnect(payment_for_participant_complete)
