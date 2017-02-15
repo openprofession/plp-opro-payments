@@ -91,14 +91,14 @@ def op_payment_view(request):
         # действительно создаем платеж только перед отправкой
         try:
             order_number = request.session.get(PAYMENT_SESSION_KEY)
-            payment_for_user(request.user, verified_enrollment, set(upsales) - set(paid_upsales), total_price,
+            payment_for_user(request, verified_enrollment, set(upsales) - set(paid_upsales), total_price,
                              only_first_course=only_first_course, first_session_id=first_session_id, order_number=order_number)
             del request.session[PAYMENT_SESSION_KEY]
             return JsonResponse({'status': 0})
         except:
             return JsonResponse({'status': 1})
 
-    payment = payment_for_user(request.user, verified_enrollment, set(upsales) - set(paid_upsales), total_price, create=False,
+    payment = payment_for_user(request, verified_enrollment, set(upsales) - set(paid_upsales), total_price, create=False,
                                only_first_course=only_first_course, first_session_id=first_session_id)
     request.session[PAYMENT_SESSION_KEY] = payment.order_number
     host_url = get_host_url(request)

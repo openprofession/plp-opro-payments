@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import time
 import urllib
 from django.conf import settings
@@ -25,11 +26,11 @@ if RAVEN_CONFIG:
     client = Client(RAVEN_CONFIG.get('dsn'))
 
 
-def payment_for_user(user, enrollment_type, upsale_links, price, create=True, only_first_course=False,
+def payment_for_user(request, enrollment_type, upsale_links, price, create=True, only_first_course=False,
                      first_session_id=None, order_number=None):
     """
     Создание объекта YandexPayment для пользователя с сохранением в бд или без
-    :param user: объект User
+    :param request: объект request
     :param enrollment_type: SessionEnrollmentType или EducationalModuleEnrollmentType
     :param upsale_links: список UpsaleLink
     :param price: int
@@ -40,6 +41,7 @@ def payment_for_user(user, enrollment_type, upsale_links, price, create=True, on
     :return: YandexPayment
     """
     assert enrollment_type.active == True
+    user = request.user
     # Яндекс-Касса не даст провести оплату два раза по одному и тому же order_number
     upsales = '-'.join([str(i.id) for i in upsale_links])
     if isinstance(enrollment_type, SessionEnrollmentType):
@@ -80,10 +82,10 @@ def payment_for_user(user, enrollment_type, upsale_links, price, create=True, on
     # add google analytics
     if create:
         if isinstance(enrollment_type, SessionEnrollmentType):
-            data = prepare_ga_data(order_number, user, price, enrollment_type.session)
+            data = prepare_ga_data(order_number, request, price, enrollment_type.session)
         else:
             fsi = first_session_id if only_first_course else None
-            data = prepare_ga_data(order_number, user, price, enrollment_type.module, fsi)
+            data = prepare_ga_data(order_number, request, price, enrollment_type.module, fsi)
         metadata['google_analytics'] = data
 
     try:
@@ -257,10 +259,15 @@ def _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links
     logging.debug('[payment_for_user_complete] enrollment=%s new_mode=%s', enrollment.id, edmodule['mode'])
 
 
-def prepare_ga_data(order_number, user, price, obj, first_session_id=None):
+def prepare_ga_data(order_number, request, price, obj, first_session_id=None):
     """
     Подготовка массива строк с данными для гугл аналитики
     """
+    user_cookie = request.COOKIES.get('_ga', '') or ''
+    user_cookie = re.search(r'[\d.]+$', user_cookie)
+    if not user_cookie:
+        return []
+    user_cookie = user_cookie.group()
     try:
         google_id = settings.GOOGLE_ANALYTICS_ID
     except AttributeError:
@@ -271,7 +278,7 @@ def prepare_ga_data(order_number, user, price, obj, first_session_id=None):
     params = {
         'v': '1',
         'tid': google_id,
-        'cid': user.id,
+        'cid': user_cookie,
         'ti': order_number,
         'cu': 'RUB',
     }
