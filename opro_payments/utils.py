@@ -134,9 +134,18 @@ def payment_for_user_complete(sender, **kwargs):
     push_google_analytics_for_payment(payment)
 
 
-def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_links):
-    logging.info('[payment_for_user_complete] got payment information from yandex.kassa: metadata=%s payment=%s',
-                 metadata, payment)
+def outer_payment_for_user(user, sku_parts, new_mode, upsale_links):
+    user_data = {'id': user.id}
+    if sku_parts['type'] == 'course':
+        _payment_for_session_complete(None, None, user_data, new_mode, upsale_links, with_yandex=False)
+    elif sku_parts['type'] == 'edmodule':
+        _payment_for_module_complete(None, None, user_data, new_mode, upsale_links, with_yandex=False)
+
+
+def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_links, with_yandex=True):
+    if with_yandex:
+        logging.info('[payment_for_user_complete] got payment information from yandex.kassa: metadata=%s payment=%s',
+                     metadata, payment)
 
     enr_type = SessionEnrollmentType.objects.get(id=new_mode['id'])
     session = enr_type.session
@@ -145,16 +154,17 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
 
     upsales = UpsaleLink.objects.filter(id__in=upsale_links)
     promocodes = []
+    object_enrollment_defaults = {
+        'enrollment_type': ObjectEnrollment.ENROLLMENT_TYPE_CHOICES.paid,
+        'payment_type': ObjectEnrollment.PAYMENT_TYPE_CHOICES.yandex if with_yandex else ObjectEnrollment.PAYMENT_TYPE_CHOICES.other,
+        'payment_order_id': payment.order_number if with_yandex else '',
+        'is_active': True,
+    }
     for u in upsales:
         obj, created = ObjectEnrollment.objects.update_or_create(
             user=user,
             upsale=u,
-            defaults={
-                'enrollment_type': ObjectEnrollment.ENROLLMENT_TYPE_CHOICES.paid,
-                'payment_type': ObjectEnrollment.PAYMENT_TYPE_CHOICES.yandex,
-                'payment_order_id': payment.order_number,
-                'is_active': True,
-            }
+            defaults=object_enrollment_defaults
         )
         if created:
             data = obj.jsonfield or {}
@@ -165,8 +175,8 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
     params = dict(
         participant=participant,
         session_enrollment_type=enr_type,
-        payment_type=EnrollmentReason.PAYMENT_TYPE.YAMONEY,
-        payment_order_id=payment.order_number,
+        payment_type=EnrollmentReason.PAYMENT_TYPE.YAMONEY if with_yandex else EnrollmentReason.PAYMENT_TYPE.OTHER,
+        payment_order_id=payment.order_number if with_yandex else '',
     )
     if not EnrollmentReason.objects.filter(**params).exists():
         try:
@@ -191,9 +201,10 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
     logging.debug('[payment_for_user_complete] participant=%s new_mode=%s', participant.id, new_mode['mode'])
 
 
-def _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links):
-    logging.info('[payment_for_user_complete] got payment information from yandex.kassa: metadata=%s payment=%s',
-                 metadata, payment)
+def _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links, with_yandex=True):
+    if with_yandex:
+        logging.info('[payment_for_user_complete] got payment information from yandex.kassa: metadata=%s payment=%s',
+                     metadata, payment)
 
     enr_type = EducationalModuleEnrollmentType.objects.get(module__id=edmodule['id'], mode=edmodule['mode'])
     module = enr_type.module
@@ -203,16 +214,17 @@ def _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links
 
     upsales = UpsaleLink.objects.filter(id__in=upsale_links)
     promocodes, bought_upsales = [], []
+    upsales_defaults = {
+        'enrollment_type': ObjectEnrollment.ENROLLMENT_TYPE_CHOICES.paid,
+        'payment_type': ObjectEnrollment.PAYMENT_TYPE_CHOICES.yandex if with_yandex else ObjectEnrollment.PAYMENT_TYPE_CHOICES.other,
+        'payment_order_id': payment.order_number if with_yandex else '',
+        'is_active': True,
+    }
     for u in upsales:
         bought_upsale, _created = ObjectEnrollment.objects.update_or_create(
             user=user,
             upsale=u,
-            defaults={
-                'enrollment_type': ObjectEnrollment.ENROLLMENT_TYPE_CHOICES.paid,
-                'payment_type': ObjectEnrollment.PAYMENT_TYPE_CHOICES.yandex,
-                'payment_order_id': payment.order_number,
-                'is_active': True,
-            }
+            defaults=upsales_defaults
         )
         if _created:
             bought_upsales.append(u)
@@ -223,8 +235,8 @@ def _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links
     edmodule_reason, created = EducationalModuleEnrollmentReason.objects.get_or_create(
         enrollment=enrollment,
         module_enrollment_type=enr_type,
-        payment_type=EducationalModuleEnrollmentReason.PAYMENT_TYPE.YAMONEY,
-        payment_order_id=payment.order_number,
+        payment_type=EducationalModuleEnrollmentReason.PAYMENT_TYPE.YAMONEY if with_yandex else EducationalModuleEnrollmentReason.PAYMENT_TYPE.OTHER,
+        payment_order_id=payment.order_number if with_yandex else '',
         full_paid=not edmodule['only_first_course']
     )
     edmodule_payed.send(EducationalModuleEnrollmentReason, instance=edmodule_reason,
@@ -237,8 +249,8 @@ def _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links
         params = dict(
             participant=participant,
             session_enrollment_type=session_enr_type,
-            payment_type=EnrollmentReason.PAYMENT_TYPE.YAMONEY,
-            payment_order_id=payment.order_number,
+            payment_type=EnrollmentReason.PAYMENT_TYPE.YAMONEY if with_yandex else EnrollmentReason.PAYMENT_TYPE.OTHER,
+            payment_order_id=payment.order_number if with_yandex else '',
         )
         if not EnrollmentReason.objects.filter(**params).exists():
             try:

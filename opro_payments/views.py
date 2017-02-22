@@ -1,23 +1,37 @@
 # coding: utf-8
 
 import json
+import hmac
 import logging
+import re
+
 from django.conf import settings
 from django.shortcuts import get_object_or_404, render
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import AnonymousUser
 from django.http import Http404, JsonResponse, HttpResponseServerError, HttpResponseRedirect
 from django.views.decorators.csrf import csrf_exempt
+from django.core.exceptions import ValidationError
 from django.core.urlresolvers import reverse
+from django.core.validators import validate_email
 from django.template.loader import get_template
+from django.utils.crypto import constant_time_compare
+from django.utils.translation import ugettext as _
+
+import requests
 from emails.django import Message
+from rest_framework import status, permissions
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
 from payments.models import YandexPayment
-from plp.models import CourseSession
+from plp.models import CourseSession, User, Course, EnrollmentReason
 from plp.notifications.base import get_host_url
 from plp_edmodule.models import EducationalModule, EducationalModuleEnrollmentReason
 from plp.utils.helpers import get_prefix_and_site
 from .forms import CorporatePaymentForm
-from .models import UpsaleLink, ObjectEnrollment
-from .utils import payment_for_user, client
+from .models import UpsaleLink, ObjectEnrollment, OuterPayment
+from .utils import payment_for_user, client, outer_payment_for_user
 
 PAYMENT_SESSION_KEY = 'opro_payment_current_order'
 
@@ -258,3 +272,249 @@ def corporate_order_view(request, order_type, obj_id):
     else:
         context['module'] = obj
     return render(request, 'opro_payments/corporate_order.html', context)
+
+
+class EnrollmentApiViewException(Exception):
+    pass
+
+
+class EnrollmentApiPermission(permissions.BasePermission):
+    """
+    Проверка подлинности запроса оплаты по лендингу:
+    """
+    def has_permission(self, request, view):
+        secret_key = settings.LANDING_ECOMMERCE_SECRET
+        key = request.META.get('HTTP_X_WC_WEBHOOK_SIGNATURE') or ''
+        body = request.stream.body
+        return constant_time_compare(hmac.new(secret_key, body).hexdigest(), key)
+
+
+class EnrollmentApiView(APIView):
+    """
+    view обработки записи на курсы/специализации с лендинга.
+    """
+    DEBUG_EMAIL_TO = getattr(settings, 'ENROLLMENT_API_DEBUG_EMAIL', 'debug@openprofession.ru')
+    permission_classes = (EnrollmentApiPermission, )
+
+    def post(self, request):
+        outer_payment = OuterPayment.objects.create(data=request.data)
+        sku, email = '', ''
+        warnings = []
+        new_user_created = False
+        # при возникновении исключений EnrollmentApiViewException на этом шаге запись на
+        # курс/специализацию/апсейл не происходит
+        try:
+            email = request.data.get('order', {}).get('customer', {}).get('email')
+            if not email:
+                raise EnrollmentApiViewException(u'Данные не содержат email')
+            sku = request.data.get('order', {}).get('line_items', [])
+            if len(sku) != 1:
+                raise EnrollmentApiViewException(_(u'Ожидается 1 элемент в line_items, пришло %s') % len(sku))
+            elif not sku[0].get('sku'):
+                raise EnrollmentApiViewException(u'Данные не содержат sku')
+            # разделитель +
+            sku = sku[0]['sku']
+            sku_parts = self.parse_sku(sku)
+            try:
+                validate_email(email)
+            except ValidationError:
+                raise EnrollmentApiViewException(u'Задан невалидный емейл %s' % email)
+            user = User.objects.filter(email=email).first()
+            obj, upsales, log = self.items_to_buy(sku_parts, user)
+            warnings.extend(log)
+            if not user:
+                user = self.create_user(email)
+                new_user_created = True
+        except EnrollmentApiViewException as e:
+            logging.error(u'outer payment %s error: %s' % (outer_payment.id, e))
+            if client:
+                client.captureMessage('outer payment error', extra={
+                    'exception': u'%s' % e,
+                    'request_data': request.data,
+                })
+            self.send_debug_mail(error=u'%s' % e, sku=sku, email=email, outer_payment=outer_payment)
+            return Response(status=status.HTTP_400_BAD_REQUEST)
+
+        # далее записываем пользователя на те объекты из sku, на которые он не был записан
+        if not new_user_created:
+            warnings.extend(self.check_items_for_user(user, sku_parts, obj, upsales))
+        new_mode = obj.get_verified_mode_enrollment_type()
+        mode_data = {'id': new_mode.id, 'mode': new_mode.mode}
+        if sku_parts['type'] == 'edmodule':
+            mode_data['only_first_course'] = sku_parts['only_first_course']
+            if sku_parts['only_first_course']:
+                mode_data['first_session_id'] = sku_parts['first_session_id']
+        outer_payment_for_user(user, sku_parts, mode_data, upsales)
+        self.send_debug_mail(warnings=warnings, sku=sku, email=email, outer_payment=outer_payment)
+        return Response(status=status.HTTP_200_OK)
+
+    def send_debug_mail(self, **kwargs):
+        msg = Message(
+            subject=get_template('opro_payments/emails/outer_payment_debug_subject.txt'),
+            html=get_template('opro_payments/emails/outer_payment_debug_message.html'),
+            mail_from=settings.EMAIL_NOTIFICATIONS_FROM,
+            mail_to=self.DEBUG_EMAIL_TO
+        )
+        try:
+            msg.send(context={'context': kwargs, 'request': self.request})
+        except Exception as e:
+            logging.error('Failed to send outer payment debug email: %s' % e)
+            if client:
+                client.captureMessage('Failed to send outer payment debug email', extra={
+                    'exception': str(e),
+                    'email_context': kwargs,
+                })
+
+    def create_user(self, email):
+        post_data = {'emails': [email]}
+        request_url = '{}/users/simple_mass_registration/'.format(settings.SSO_NPOED_URL)
+        try:
+            logging.info('Request %s with data=%s' % (request_url, post_data))
+            r = requests.post(
+                request_url,
+                json=post_data,
+                headers={'X-SSO-Api-Key': settings.SSO_API_KEY},
+                timeout=settings.CONNECTION_TIMEOUT
+            )
+            assert r.status_code == 200, 'SSO status code %s' % r.status_code
+            sso_data = r.json().get('users', [])
+            assert len(sso_data) == 1 and 'username' in sso_data[0], 'SSO returned %s' % sso_data
+            return User.objects.get(username=sso_data[0]['username'])
+        except (requests.RequestException, AssertionError, ValueError, User.DoesNotExist) as exc:
+            error_dict = {'data': post_data, 'exception': str(exc)}
+            if client:
+                client.captureMessage('error creating user', extra=error_dict)
+            logging.error('error creating user: data={data}, exception: {exception}'.format(**error_dict))
+            raise EnrollmentApiViewException(u'Не удалось создать пользователя %s: %s' % (email, str(exc)))
+
+    def parse_sku(self, sku):
+        parts = sku.split('+')
+        result = {}
+        if len(parts) < 3:
+            raise EnrollmentApiViewException(
+                u'Получен некорректный sku %s, sku должен состоять как минимум из 3 частей' % sku)
+        if parts[0] == 'course':
+            result.update({
+                'type': 'course',
+                'slug': parts[2],
+                'uni_slug': parts[1],
+            })
+        elif parts[0] == 'edmodule':
+            if parts[2] not in ['all', 'one']:
+                raise EnrollmentApiViewException(
+                    u'Получен некорректный sku %s, 3 часть sku при записи на специализацию должна быть all или one'
+                    % sku)
+            only_first_course = parts[2] == 'one'
+            result.update({
+                'type': 'edmodule',
+                'slug': parts[1],
+                'only_first_course': only_first_course,
+            })
+        else:
+            raise EnrollmentApiViewException(
+                u'Получен некорректный sku %s, 1 часть sku должна быть course или edmodule' % sku)
+        upsale_ids = []
+        for p in parts[3:]:
+            upsale_id = re.match(r'^upsalelink(\d+)$', p)
+            if not upsale_id:
+                raise EnrollmentApiViewException(u'Получен некорректный sku %s, не удалось распарсить апсейлы' % sku)
+            upsale_ids.append(int(upsale_id.group(1)))
+        result['upsales'] = upsale_ids
+        return result
+
+    def check_items_for_user(self, user, sku_parts, obj, upsales):
+        """
+        проверка наличия у пользователя уже оплаченных курсов/апсейлов/специализаций
+        """
+        log = []
+        if sku_parts['type'] == 'course':
+            has_paid = EnrollmentReason.objects.filter(
+                participant__user=user,
+                participant__session=obj,
+                session_enrollment_type__mode='verified'
+            ).exists()
+            if has_paid:
+                log.append(_(u'Пользователь %s уже оплачивал курс %s') % (user.email, obj.get_absolute_slug_v1()))
+                logging.error('EnrollmentApiView: user %s already paid for course %s' %
+                              (user, obj.get_absolute_slug_v1()))
+        elif sku_parts['type'] == 'edmodule':
+            has_paid = obj.get_enrollment_reason_for_user(user)
+            if has_paid:
+                log.append(_(u'Пользователь %s уже оплачивал специализацию %s') % (user.email, obj.code))
+                logging.error('EnrollmentApiView: user %s already paid for edmodule %s' % (user, obj.code))
+
+        paid_upsales = ObjectEnrollment.objects.filter(
+            user=user,
+            upsale__id__in=upsales
+        ).values_list('upsale_id', flat=True)
+        if paid_upsales:
+            log.append(_(u'Пользователь уже оплачивал апсейл(ы): %s') %
+                       ', '.join(map(lambda x: str(x), paid_upsales)))
+            logging.error('EnrollmentApiView: user %s already paid for upsales %s'
+                          % (user, ', '.join(map(lambda x: str(x), paid_upsales))))
+        return log
+
+    def items_to_buy(self, sku, user):
+        """
+        выбор объектов для покупки
+        """
+        if sku['type'] == 'course':
+            try:
+                course = Course.objects.get(slug=sku['slug'], university__slug=sku['uni_slug'])
+                obj = course.next_session
+            except Course.DoesNotExist:
+                raise EnrollmentApiViewException(u'курс %(uni_slug)s+%(slug)s не найден' % sku)
+            else:
+                if not obj:
+                    raise EnrollmentApiViewException(u'курс %s не имеет открытых сессий' % course)
+                if not obj.get_verified_mode_enrollment_type():
+                    raise EnrollmentApiViewException(u'у сессии %s нет платного варианта записи' % obj)
+                if obj.allow_enrollments():
+                    raise EnrollmentApiViewException(u'сессия %s не доступна для записи' % obj)
+        else:
+            try:
+                obj = EducationalModule.objects.get(code=sku['slug'])
+            except EducationalModule.DoesNotExist:
+                raise EnrollmentApiViewException(u'модуль %(slug)s не найден' % sku)
+            if not obj.get_verified_mode_enrollment_type():
+                raise EnrollmentApiViewException(u'у модуля %s нет платного варианта записи' % obj)
+            if sku['only_first_course']:
+                if not user:
+                    user = AnonymousUser()
+                else:
+                    reason = obj.get_enrollment_reason_for_user(user)
+                    if reason:
+                        if reason.full_paid:
+                            msg = _(u'Пользователь %s уже оплачивал полностью специализацию %s') % \
+                                (user.email, obj.code)
+                        else:
+                            msg = _(u'Пользователь %s уже оплачивал частично специализацию %s') % \
+                                (user.email, obj.code)
+                        raise EnrollmentApiViewException(msg)
+                first_session = obj.get_first_session_to_buy(user)
+                if not first_session:
+                    if user.is_authenticated():
+                        raise EnrollmentApiViewException(
+                            _(u'не удалось выбрать курс для частичной оплаты специализации %s для пользователя %s') %
+                            (obj.code, user.username)
+                        )
+                    else:
+                        raise EnrollmentApiViewException(
+                            _(u'не удалось выбрать курс для частичной оплаты специализации %s') %
+                            obj.code
+                        )
+                sku['first_session_id'] = first_session[0].id
+        upsales = UpsaleLink.objects.filter(id__in=sku['upsales'])
+        log, available_upsales = [], []
+        for u in upsales:
+            if not u.is_active:
+                log.append(_(u'Аспейл #%s не активен') % u.id)
+            elif u.content_object != obj:
+                log.append(_(u'Аспейл #%s не относится к выбранному объекту %s') % (u.id, obj))
+            else:
+                available_upsales.append(u.id)
+        not_found_upsales = set([long(i) for i in sku['upsales']]) - set([i.id for i in upsales])
+        if not_found_upsales:
+            log.append(_(u'Апсейлы со следующими id не найдены: %s') %
+                       ', '.join(map(lambda x: str(x), not_found_upsales)))
+        return obj, available_upsales, log

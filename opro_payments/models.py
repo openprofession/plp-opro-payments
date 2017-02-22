@@ -226,3 +226,15 @@ class ObjectEnrollment(models.Model):
                     self.upsale.additional_info = info
                     self.upsale.save()
             super(ObjectEnrollment, self).save(**kwargs)
+
+
+class OuterPayment(models.Model):
+    data = JSONField(verbose_name=_(u'Данные'))
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_(u'Время создания'))
+
+    class Meta:
+        verbose_name = _(u'Внешний платеж')
+        verbose_name_plural = _(u'Внешние платежи')
+
+    def __unicode__(self):
+        return 'Payment #%s' % self.id
