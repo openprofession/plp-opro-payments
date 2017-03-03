@@ -1,0 +1,1 @@
+{% load i18n %}{% blocktrans %}Отчет об оплате на лендинге{% endblocktrans %}

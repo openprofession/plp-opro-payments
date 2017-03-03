@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 from .admin_forms import UpsaleForm, UpsaleLinkForm, ObjectEnrollmentForm
-from .models import Upsale, UpsaleLink, ObjectEnrollment
+from .models import Upsale, UpsaleLink, ObjectEnrollment, OuterPayment
 
 
 @admin.register(Upsale)
@@ -26,3 +26,8 @@ class ObjectEnrollmentAdmin(admin.ModelAdmin):
         if db_field.name == 'upsale':
             field.queryset = field.queryset.filter(is_active=True)
         return field
+
+
+@admin.register(OuterPayment)
+class OuterPaymentAdmin(admin.ModelAdmin):
+    list_display = ('id', 'created_at', )

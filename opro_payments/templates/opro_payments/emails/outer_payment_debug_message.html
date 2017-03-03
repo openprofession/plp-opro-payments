@@ -1,0 +1,25 @@
+{%  load i18n %}
+
+{% if error %}
+    <p>{% blocktrans %}Оплата на лендинге не прошла:{% endblocktrans %}</p>
+    <p>{{ error }}</p>
+
+{% elif warnings %}
+    <p>{% blocktrans %}При оплате на лендинге возникли ошибки:{% endblocktrans %}</p>
+    {% for warning in warnings %}
+        <p>{{ warning }}</p>
+    {% endfor %}
+
+{% else %}
+    <p>{% blocktrans %}Оплата на лендинге успешно завершена{% endblocktrans %}</p>
+{% endif %}
+
+<p>
+    {% blocktrans %}Пользователь: {{ email }}{% endblocktrans %}
+</p>
+<p>
+    {% blocktrans %}SKU покупки: {{ sku }}{% endblocktrans %}
+</p>
+<p>
+    {% blocktrans with id=outer_payment.id %}Внешний платеж #{{ id }}{% endblocktrans %}
+</p>
