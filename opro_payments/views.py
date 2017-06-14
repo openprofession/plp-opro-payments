@@ -137,8 +137,13 @@ def landing_op_payment_view(request):
                 'shopFailURL': payment_fail,
                 'shopSuccessURL': payment_success
             })
-        except:
-            return JsonResponse({'status': 1})
+
+        except Exception as e:
+            import traceback
+            return JsonResponse({
+                'status': 1,
+                'traceback': str(traceback.format_exc())
+                })
 
     context = {
         'upsale_links': upsales,
