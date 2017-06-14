@@ -27,7 +27,7 @@ if RAVEN_CONFIG:
 
 
 def payment_for_user(request, enrollment_type, upsale_links, price, create=True, only_first_course=False,
-                     first_session_id=None, order_number=None):
+                     first_session_id=None, order_number=None, user=None):
     """
     Создание объекта YandexPayment для пользователя с сохранением в бд или без
     :param request: объект request
@@ -41,7 +41,7 @@ def payment_for_user(request, enrollment_type, upsale_links, price, create=True,
     :return: YandexPayment
     """
     assert enrollment_type.active == True
-    user = request.user
+    user = user if user else request.user
     # Яндекс-Касса не даст провести оплату два раза по одному и тому же order_number
     upsales = '-'.join([str(i.id) for i in upsale_links])
     if isinstance(enrollment_type, SessionEnrollmentType):
