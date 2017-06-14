@@ -338,7 +338,7 @@ def prepare_ga_data(order_number, request, price, obj, first_session_id=None):
             })
             data.append(_params)
         else:
-            price_data = obj.get_price_list(user)
+            price_data = obj.get_price_list()
             _params = params.copy()
             _params.update({
                 't': 'item',
