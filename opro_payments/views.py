@@ -71,20 +71,8 @@ def landing_op_payment_view(request):
     if session_id:
         obj_price = verified_enrollment.price
     else:
-        if only_first_course:
-            try:
-                session, price = obj.get_first_session_to_buy(request.user)
-                obj_price = price
-                first_session_id = session.id
-            except TypeError:
-                if obj_is_paid:
-                    first_session_id = None
-                    obj_price = 0
-                else:
-                    return HttpResponseServerError()
-        else:
-            obj_price = obj.get_price_list()['whole_price']
-
+        obj_price = obj.get_price_list()['whole_price']
+            
     total_price = 0 if obj_is_paid else obj_price
     total_price += sum([i.get_payment_price() for i in upsales])
 
@@ -101,12 +89,13 @@ def landing_op_payment_view(request):
             )
 
             sso_data = r.json().get('users', [])
-            user = User.objects.get(email=sso_data[0]['email'])
-
-            username = request.POST.get('username', '')
-            if username: # and user.username == user.email.split('@')[0]:
-                user.username = username
-                user.save()
+            email = sso_data[0]['email']
+ 
+            user = User.objects.get(email=email)
+            user.username = re.sub('[^a-zA-Z0-9]', '_', email)
+            if user.first_name == user.email.split('@')[0]:
+                user.first_name = request.POST.get('firstname', '')
+            user.save()
 
             # действительно создаем платеж только перед отправкой
             payment = payment_for_user(request, verified_enrollment, set(upsales), total_price,
@@ -137,7 +126,6 @@ def landing_op_payment_view(request):
                 'shopFailURL': payment_fail,
                 'shopSuccessURL': payment_success
             })
-
         except Exception as e:
             import traceback
             return JsonResponse({
@@ -153,6 +141,7 @@ def landing_op_payment_view(request):
         'object': obj.course if isinstance(obj, CourseSession) else obj,
         'first_session': session,
         'verified': verified_enrollment,
+        'landing': True,
         'fields': {
             "shopId": settings.YANDEX_MONEY_SHOP_ID,
             "scid": settings.YANDEX_MONEY_SCID,
@@ -226,6 +215,7 @@ def landing_op_payment_status(request, payment_type, obj_id, user_id, status):
             context['first_session'] = get_object_or_404(CourseSession, id=metadata['edmodule']['first_session_id'])
 
         context['landing'] = True
+        context['landing_username'] = user.first_name
 
     return render(request, template_path, context)  
 
