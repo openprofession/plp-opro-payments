@@ -93,8 +93,7 @@ def landing_op_payment_view(request):
  
             user = User.objects.get(email=email)
             user.username = re.sub('[^a-zA-Z0-9]', '_', email)
-            if user.first_name == user.email.split('@')[0]:
-                user.first_name = request.POST.get('firstname', '')
+            user.first_name = request.POST.get('firstname', '')
             user.save()
 
             # действительно создаем платеж только перед отправкой
