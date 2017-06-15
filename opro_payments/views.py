@@ -104,7 +104,7 @@ def landing_op_payment_view(request):
             user = User.objects.get(email=sso_data[0]['email'])
 
             username = request.POST.get('username', '')
-            if username and user.username == user.email.split('@')[0]:
+            if username: # and user.username == user.email.split('@')[0]:
                 user.username = username
                 user.save()
 
