@@ -71,7 +71,15 @@ def landing_op_payment_view(request):
     if session_id:
         obj_price = verified_enrollment.price
     else:
-        obj_price = obj.get_price_list()['whole_price']
+        if only_first_course:
+            try:
+                session, price = obj.get_first_session_to_buy(None)
+                obj_price = price
+                first_session_id = session.id
+            except TypeError:
+                return HttpResponseServerError()
+        else:
+            obj_price = obj.get_price_list()['whole_price']
             
     total_price = 0 if obj_is_paid else obj_price
     total_price += sum([i.get_payment_price() for i in upsales])
@@ -94,6 +102,7 @@ def landing_op_payment_view(request):
             user = User.objects.get(email=email)
             user.username = re.sub('[^a-zA-Z0-9]', '_', email)
             user.first_name = request.POST.get('firstname', '')
+            user.last_name = ' '
             user.save()
 
             # действительно создаем платеж только перед отправкой
