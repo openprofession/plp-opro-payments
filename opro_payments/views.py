@@ -96,7 +96,7 @@ def landing_op_payment_view(request):
             if not verified_enrollment:
                 raise Http404
                 
-            session, first_session_id, obj_price, total_price = get_obj_price(session_id, only_first_course, obj, upsales)
+            session, first_session_id, obj_price, total_price = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales)
             user = get_or_create_user(first_name, email)
             payment_urls = get_payment_urls(request, obj, user, session_id, utm_data) 
             payment = payment_for_user(request, verified_enrollment, set(upsales), total_price,
@@ -127,7 +127,7 @@ def landing_op_payment_view(request):
     if not verified_enrollment:
         raise Http404
 
-    session, first_session_id, obj_price, total_price = get_obj_price(session_id, only_first_course, obj, upsales)
+    session, first_session_id, obj_price, total_price = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales)
 
     # Сценарий оплаты с регистрацией пользователя с сайта OpenProfession
     if request.method == 'POST' and request.is_ajax():

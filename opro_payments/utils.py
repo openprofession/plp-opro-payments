@@ -44,7 +44,9 @@ def get_object_info(request, session_id, module_id):
 
     return obj, verified_enrollment, upsales
 
-def get_obj_price(session_id, only_first_course, obj, upsales):
+def get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales):
+    session = None
+    first_session_id = None
     if session_id:
         obj_price = verified_enrollment.price
     else:
