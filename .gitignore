@@ -57,4 +57,5 @@ target/
 
 .env/
 .idea/
+.vscode/
 *.sqlite
