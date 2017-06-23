@@ -31,7 +31,7 @@ from plp_edmodule.models import EducationalModule, EducationalModuleEnrollmentRe
 from plp.utils.helpers import get_prefix_and_site
 from .forms import CorporatePaymentForm
 from .models import UpsaleLink, ObjectEnrollment, OuterPayment
-from .utils import payment_for_user, client, outer_payment_for_user
+from .utils import payment_for_user, client, outer_payment_for_user, get_or_create_user, get_payment_urls, get_object_info, get_obj_price
 
 PAYMENT_SESSION_KEY = 'opro_payment_current_order'
 
@@ -39,91 +39,68 @@ def landing_op_payment_view(request):
     """
     Страница подтверждения оплаты сессии или модуля при переходе с лэндинга
     """
+
+    first_name = request.GET.get('first_name', '')
+    email = request.GET.get('email', '')
     session_id = request.GET.get('course_session_id', '')
     module_id = request.GET.get('edmodule_id', '')
     utm_data = request.GET.get('_utm_data', '')
     only_first_course = bool(request.GET.get('only_first_course', False))
-    
+
     if bool(session_id) == bool(module_id):
         raise Http404
     if (session_id and not session_id.isdigit()) or (module_id and not module_id.isdigit()):
         raise Http404
 
-    obj_model = CourseSession if session_id else EducationalModule
-    obj_id = session_id or module_id
-    obj = get_object_or_404(obj_model, id=obj_id)
-    verified_enrollment = obj.get_verified_mode_enrollment_type()
-    if not verified_enrollment:
-        raise Http404
+    payment_fields =  {
+        "shopId": settings.YANDEX_MONEY_SHOP_ID,
+        "scid": settings.YANDEX_MONEY_SCID,
+        "orderNumber": "",
+        "customerNumber": "",
+        "sum": "",
+        "cps_email": "",
+        "cps_phone": "",
+        "shopFailURL": "",
+        "shopSuccessURL": ""
+    }
 
-    upsale_link_ids = [i for i in request.GET.getlist('upsale_link_ids') if i.isdigit()]
-    upsale_links = UpsaleLink.objects.filter(id__in=upsale_link_ids, is_active=True)
-    upsales = []
-    for upsale in upsale_links:
-        s = upsale.content_object
-        if s and isinstance(s, obj_model) and s.id == obj.id:
-            upsales.append(upsale)
+    """
+    Сценарий, при котором данные о пользователе приходят с лэндинга
+    Необходимо максимально быстро отдать страницу пользователю, чтобы в фоновом режиме
+    подготовить необходимые для платежа данные и сделать редирект на Яндекс.Кассы
+    """
 
-    obj_is_paid = False
-    first_session_id = None
-    session = None
-    
-    if session_id:
-        obj_price = verified_enrollment.price
-    else:
-        if only_first_course:
-            try:
-                session, price = obj.get_first_session_to_buy(None)
-                obj_price = price
-                first_session_id = session.id
-            except TypeError:
-                return HttpResponseServerError()
-        else:
-            obj_price = obj.get_price_list()['whole_price']
-            
-    total_price = 0 if obj_is_paid else obj_price
-    total_price += sum([i.get_payment_price() for i in upsales])
-
-    if request.method == 'POST' and request.is_ajax():
+    with_landing_user = False
+    if request.method == 'GET' and first_name and email:
         try:
-            # проверяем пользователя, и если его нет - то создаем пользователя
-            post_data = {'emails': [request.POST.get('email', '')]}
-            request_url = '{}/users/simple_mass_registration/'.format(settings.SSO_NPOED_URL)
-            r = requests.post(
-                request_url,
-                json=post_data,
-                headers={'X-SSO-Api-Key': settings.SSO_API_KEY},
-                timeout=settings.CONNECTION_TIMEOUT
-            )
+            validate_email(email)
+        except:
+            raise Http404
+        with_landing_user = True
 
-            sso_data = r.json().get('users', [])
-            email = sso_data[0]['email']
- 
-            user = User.objects.get(email=email)
-            user.username = re.sub('[^a-zA-Z0-9]', '_', email)
-            user.first_name = request.POST.get('firstname', '')
-            user.last_name = ' '
-            user.save()
+    if with_landing_user:
+        context = {
+            'landing': True,
+            'with_landing_user': with_landing_user,
+            'fields': payment_fields,
+            'shop_url': settings.YANDEX_MONEY_SHOP_URL,
+        }
 
-            # действительно создаем платеж только перед отправкой
+        return render(request, 'opro_payments/landing_op_payment.html', context)
+
+    # Сценарий оплаты с регистрацией пользователя с лэндинга
+    if request.method == 'POST' and request.is_ajax() and request.POST.get('with_landing_user', ''):
+        try:
+            obj, verified_enrollment, upsales = get_object_info(request, session_id, module_id)
+
+            if not verified_enrollment:
+                raise Http404
+                
+            session, first_session_id, obj_price, total_price = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales)
+            user = get_or_create_user(first_name, email)
+            payment_urls = get_payment_urls(request, obj, user, session_id, utm_data) 
             payment = payment_for_user(request, verified_enrollment, set(upsales), total_price,
-                             user=user, only_first_course=only_first_course, first_session_id=first_session_id)
-
-            host_url = get_host_url(request)
-            payment_fail = host_url + reverse('landing_op_payment_status', kwargs={
-                'status': 'fail',
-                'obj_id': obj.id,
-                'user_id': user.id,
-                'payment_type': 'session' if session_id else 'edmodule',
-            })
-            payment_success = host_url + reverse('landing_op_payment_status', kwargs={
-                'status': 'success',
-                'obj_id': obj.id,
-                'user_id': user.id,
-                'payment_type': 'session' if session_id else 'edmodule',
-            })
-            if utm_data:
-                payment_success = '{}?{}'.format(payment_success, utm_data)
+                                user=user, only_first_course=only_first_course, first_session_id=first_session_id)
 
             return JsonResponse({
                 'status': 0,
@@ -131,8 +108,43 @@ def landing_op_payment_view(request):
                 'customerNumber': payment.customer_number,
                 'sum': payment.order_amount,
                 'cps_email': user.email,
-                'shopFailURL': payment_fail,
-                'shopSuccessURL': payment_success
+                'shopFailURL': payment_urls['payment_fail'],
+                'shopSuccessURL': payment_urls['payment_success']
+            })
+        except Exception as e:
+            import traceback
+            return JsonResponse({
+                'status': 1,
+                'traceback': str(traceback.format_exc())
+                })
+
+    """
+    Сценарий, когда имя и email пользователь вводи на странице OpenProfession
+    """
+
+    obj, verified_enrollment, upsales = get_object_info(request, session_id, module_id)
+
+    if not verified_enrollment:
+        raise Http404
+
+    session, first_session_id, obj_price, total_price = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales)
+
+    # Сценарий оплаты с регистрацией пользователя с сайта OpenProfession
+    if request.method == 'POST' and request.is_ajax():
+        try:
+            user = get_or_create_user(request.POST.get('firstname', ''), request.POST.get('email', ''))
+            payment_urls = get_payment_urls(request, obj, user, session_id, utm_data) 
+            payment = payment_for_user(request, verified_enrollment, set(upsales), total_price,
+                             user=user, only_first_course=only_first_course, first_session_id=first_session_id)
+                            
+            return JsonResponse({
+                'status': 0,
+                'orderNumber': payment.order_number,
+                'customerNumber': payment.customer_number,
+                'sum': payment.order_amount,
+                'cps_email': user.email,
+                'shopFailURL': payment_urls['payment_fail'],
+                'shopSuccessURL': payment_urls['payment_success']
             })
         except Exception as e:
             import traceback
@@ -145,22 +157,12 @@ def landing_op_payment_view(request):
         'upsale_links': upsales,
         'total_price': total_price,
         'obj_price': obj_price,
-        'obj_is_paid': obj_is_paid,
         'object': obj.course if isinstance(obj, CourseSession) else obj,
         'first_session': session,
         'verified': verified_enrollment,
         'landing': True,
-        'fields': {
-            "shopId": settings.YANDEX_MONEY_SHOP_ID,
-            "scid": settings.YANDEX_MONEY_SCID,
-            "orderNumber": "",
-            "customerNumber": "",
-            "sum": "",
-            "cps_email": "",
-            "cps_phone": "",
-            "shopFailURL": "",
-            "shopSuccessURL": ""
-        },
+        'with_landing_user': with_landing_user,
+        'fields': payment_fields,
         'shop_url': settings.YANDEX_MONEY_SHOP_URL,
     }
     if session_id:

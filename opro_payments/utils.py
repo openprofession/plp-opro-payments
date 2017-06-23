@@ -7,16 +7,19 @@ import time
 import urllib
 from django.conf import settings
 from django.utils import timezone
+from django.core.urlresolvers import reverse
+from django.shortcuts import get_object_or_404
 import requests
 from raven import Client
 from payments.helpers import payment_for_participant_complete
 from payments.models import YandexPayment
 from payments.sources.yandex_money.signals import payment_completed
-from plp.models import Participant, EnrollmentReason, SessionEnrollmentType, User, CourseSession
+from plp.models import Course, Participant, EnrollmentReason, SessionEnrollmentType, User, CourseSession
 from plp.utils.edx_enrollment import EDXEnrollmentError
 from plp_edmodule.models import EducationalModuleEnrollmentType, EducationalModuleEnrollment, \
     EducationalModuleEnrollmentReason, EducationalModule
 from plp_edmodule.signals import edmodule_payed
+from plp.notifications.base import get_host_url
 from .models import UpsaleLink, ObjectEnrollment
 
 RAVEN_CONFIG = getattr(settings, 'RAVEN_CONFIG', {})
@@ -25,6 +28,95 @@ client = None
 if RAVEN_CONFIG:
     client = Client(RAVEN_CONFIG.get('dsn'))
 
+def get_object_info(request, session_id, module_id):
+    obj_model = CourseSession if session_id else EducationalModule
+    obj_id = session_id or module_id
+    obj = get_object_or_404(obj_model, id=obj_id)
+    verified_enrollment = obj.get_verified_mode_enrollment_type()
+
+    upsale_link_ids = [i for i in request.GET.getlist('upsale_link_ids') if i.isdigit()]
+    upsale_links = UpsaleLink.objects.filter(id__in=upsale_link_ids, is_active=True)
+    upsales = []
+    for upsale in upsale_links:
+        s = upsale.content_object
+        if s and isinstance(s, obj_model) and s.id == obj.id:
+            upsales.append(upsale)    
+
+    return obj, verified_enrollment, upsales
+
+def get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales):
+    session = None
+    first_session_id = None
+    if session_id:
+        obj_price = verified_enrollment.price
+    else:
+        if only_first_course:
+            try:
+                session, price = obj.get_first_session_to_buy(None)
+                obj_price = price
+                first_session_id = session.id
+            except TypeError:
+                return HttpResponseServerError()
+        else:
+            obj_price = obj.get_price_list()['whole_price']
+            
+    total_price = obj_price + sum([i.get_payment_price() for i in upsales])
+
+    return session, first_session_id, obj_price, total_price
+
+def get_or_create_user(first_name, email):
+    """
+    Возвращает пользователя, если его нет - создает
+    Для прохождения упрощенного сценарция задает пользователю переданное имя и пустую фамилию
+    """
+
+    post_data = { 'emails': [email] }
+    request_url = '{}/users/simple_mass_registration/'.format(settings.SSO_NPOED_URL)
+    r = requests.post(
+        request_url,
+        json = post_data,
+        headers = { 'X-SSO-Api-Key': settings.SSO_API_KEY },
+        timeout = settings.CONNECTION_TIMEOUT
+    )
+
+    sso_data = r.json().get('users', [])
+    email = sso_data[0]['email']
+
+    user = User.objects.get(email=email)
+    user.username = re.sub('[^a-zA-Z0-9]', '_', email)
+    user.first_name = first_name
+    user.last_name = ' '
+    user.save()
+
+    return user
+
+def get_payment_urls(request, obj, user, session_id, utm_data):
+    """
+    Возвращает значения для редиректа пользователя после успешной / неуспешной оплаты
+    """
+
+    host_url = get_host_url(request)
+    payment_fail = host_url + reverse('landing_op_payment_status', kwargs={
+        'status': 'fail',
+        'obj_id': obj.id,
+        'user_id': user.id,
+        'payment_type': 'session' if session_id else 'edmodule',
+    })
+    payment_success = host_url + reverse('landing_op_payment_status', kwargs={
+        'status': 'success',
+        'obj_id': obj.id,
+        'user_id': user.id,
+        'payment_type': 'session' if session_id else 'edmodule',
+    })
+    if utm_data:
+        payment_success = '{}?{}'.format(payment_success, utm_data)
+
+    urls = {
+        'payment_fail': payment_fail,
+        'payment_success': payment_success
+    }
+
+    return urls
 
 def payment_for_user(request, enrollment_type, upsale_links, price, create=True, only_first_course=False,
                      first_session_id=None, order_number=None, user=None):
