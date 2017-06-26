@@ -372,6 +372,9 @@ def prepare_ga_data(order_number, request, price, obj, first_session_id=None):
     if not user_cookie:
         return []
     user_cookie = user_cookie.group()
+    split = user_cookie.split('.')
+    if len(split) > 2: 
+        user_cookie = "{}.{}".format(split[-2],split[-1]) 
     try:
         google_id = settings.GOOGLE_ANALYTICS_ID
     except AttributeError:
