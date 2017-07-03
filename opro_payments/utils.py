@@ -22,11 +22,34 @@ from plp_edmodule.signals import edmodule_payed
 from plp.notifications.base import get_host_url
 from .models import UpsaleLink, ObjectEnrollment
 
+# Стандартные значения для Яндекс.Кассы для передачи оператору фискальных данных
+TAX_RATE = 1 # Без НДС
+QUANTITY = 1 # Товар всегда продается в единичном экземпляре
+
 RAVEN_CONFIG = getattr(settings, 'RAVEN_CONFIG', {})
 client = None
 
 if RAVEN_CONFIG:
     client = Client(RAVEN_CONFIG.get('dsn'))
+
+def get_merchant_receipt(contact, products):
+    items = []
+    for product in products:
+        items.append({
+            'quantity': QUANTITY,
+            'price': {
+                "amount": "%.2f" % float(product['price'])
+            },
+            "tax": TAX_RATE,
+            "text": product['title']
+        })
+
+    receipt = {
+        'customerContact': contact,
+        'items': items
+    }
+
+    return receipt
 
 def get_object_info(request, session_id, module_id):
     obj_model = CourseSession if session_id else EducationalModule
@@ -47,22 +70,44 @@ def get_object_info(request, session_id, module_id):
 def get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales):
     session = None
     first_session_id = None
+    products = []
     if session_id:
         obj_price = verified_enrollment.price
+        products.append({ 
+            'title': verified_enrollment.session.course.title, 
+            'price': obj_price 
+        })
     else:
         if only_first_course:
             try:
                 session, price = obj.get_first_session_to_buy(None)
                 obj_price = price
                 first_session_id = session.id
+                products.append({
+                    'title': session.course.title,
+                    'price': obj_price 
+                })
             except TypeError:
                 return HttpResponseServerError()
         else:
             obj_price = obj.get_price_list()['whole_price']
+            products.append({
+                'title': obj.title, 
+                'price': obj_price 
+            })
             
-    total_price = obj_price + sum([i.get_payment_price() for i in upsales])
+    upsales_price = 0
+    for i in upsales:
+        upsale_price = i.get_payment_price()
+        upsales_price += upsale_price
+        products.append({
+            'title': i.upsale.title,
+            'price': upsale_price
+        })
 
-    return session, first_session_id, obj_price, total_price
+    total_price = obj_price + upsales_price
+
+    return session, first_session_id, obj_price, total_price, products
 
 def get_or_create_user(first_name, email):
     """

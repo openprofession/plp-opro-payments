@@ -31,7 +31,7 @@ from plp_edmodule.models import EducationalModule, EducationalModuleEnrollmentRe
 from plp.utils.helpers import get_prefix_and_site
 from .forms import CorporatePaymentForm
 from .models import UpsaleLink, ObjectEnrollment, OuterPayment
-from .utils import payment_for_user, client, outer_payment_for_user, get_or_create_user, get_payment_urls, get_object_info, get_obj_price
+from .utils import get_merchant_receipt, payment_for_user, client, outer_payment_for_user, get_or_create_user, get_payment_urls, get_object_info, get_obj_price
 
 PAYMENT_SESSION_KEY = 'opro_payment_current_order'
 
@@ -61,7 +61,8 @@ def landing_op_payment_view(request):
         "cps_email": "",
         "cps_phone": "",
         "shopFailURL": "",
-        "shopSuccessURL": ""
+        "shopSuccessURL": "",
+        "ym_merchant_receipt":""
     }
 
     """
@@ -96,7 +97,7 @@ def landing_op_payment_view(request):
             if not verified_enrollment:
                 raise Http404
                 
-            session, first_session_id, obj_price, total_price = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales)
+            session, first_session_id, obj_price, total_price, products = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales)
             user = get_or_create_user(first_name, email)
             payment_urls = get_payment_urls(request, obj, user, session_id, utm_data) 
             payment = payment_for_user(request, verified_enrollment, set(upsales), total_price,
@@ -109,7 +110,8 @@ def landing_op_payment_view(request):
                 'sum': payment.order_amount,
                 'cps_email': user.email,
                 'shopFailURL': payment_urls['payment_fail'],
-                'shopSuccessURL': payment_urls['payment_success']
+                'shopSuccessURL': payment_urls['payment_success'],
+                'ym_merchant_receipt': get_merchant_receipt(user.email, products)
             })
         except Exception as e:
             import traceback
@@ -127,7 +129,7 @@ def landing_op_payment_view(request):
     if not verified_enrollment:
         raise Http404
 
-    session, first_session_id, obj_price, total_price = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales)
+    session, first_session_id, obj_price, total_price, products = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales)
 
     # Сценарий оплаты с регистрацией пользователя с сайта OpenProfession
     if request.method == 'POST' and request.is_ajax():
@@ -144,7 +146,8 @@ def landing_op_payment_view(request):
                 'sum': payment.order_amount,
                 'cps_email': user.email,
                 'shopFailURL': payment_urls['payment_fail'],
-                'shopSuccessURL': payment_urls['payment_success']
+                'shopSuccessURL': payment_urls['payment_success'],
+                'ym_merchant_receipt': get_merchant_receipt(user.email, products)
             })
         except Exception as e:
             import traceback
@@ -264,10 +267,16 @@ def op_payment_view(request):
 
     first_session_id = None
     session = None
+    products = []
     if session_id:
         if verified_enrollment.is_user_enrolled(request.user):
             obj_is_paid = True
         obj_price = verified_enrollment.price
+        if not obj_is_paid:
+            products.append({ 
+                'title': verified_enrollment.session.course.title, 
+                'price': obj_price 
+            })
     else:
         obj_is_paid = EducationalModuleEnrollmentReason.objects.filter(
             enrollment__user=request.user,
@@ -279,6 +288,10 @@ def op_payment_view(request):
                 session, price = obj.get_first_session_to_buy(request.user)
                 obj_price = price
                 first_session_id = session.id
+                products.append({
+                    'title': session.course.title,
+                    'price': obj_price 
+                })
             except TypeError:
                 if obj_is_paid:
                     first_session_id = None
@@ -287,12 +300,27 @@ def op_payment_view(request):
                     return HttpResponseServerError()
         else:
             obj_price = obj.get_price_list(request.user)['whole_price']
+            products.append({
+                'title': obj.title, 
+                'price': obj_price 
+            })
 
     if obj_is_paid and len(upsales) == len(paid_upsales):
         return HttpResponseRedirect(reverse('frontpage'))
 
     total_price = 0 if obj_is_paid else obj_price
-    total_price += sum([i.get_payment_price() for i in upsales if i not in paid_upsales])
+
+    upsales_price = 0
+    for i in upsales:
+        if i not in paid_upsales:
+            upsale_price = i.get_payment_price()
+            upsales_price += upsale_price
+            products.append({
+                'title': i.upsale.title,
+                'price': upsale_price
+            })
+
+    total_price += upsales_price
 
     if request.method == 'POST' and request.is_ajax():
         # действительно создаем платеж только перед отправкой
@@ -342,7 +370,8 @@ def op_payment_view(request):
             "cps_email": request.user.email,
             "cps_phone": "",
             "shopFailURL": payment_fail,
-            "shopSuccessURL": payment_success
+            "shopSuccessURL": payment_success,
+            "ym_merchant_receipt": get_merchant_receipt(request.user.email, products)
         },
         'shop_url': settings.YANDEX_MONEY_SHOP_URL,
     }
