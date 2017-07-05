@@ -371,7 +371,7 @@ def op_payment_view(request):
             "cps_phone": "",
             "shopFailURL": payment_fail,
             "shopSuccessURL": payment_success,
-            "ym_merchant_receipt": get_merchant_receipt(request.user.email, products)
+            "ym_merchant_receipt": json.dumps(get_merchant_receipt(request.user.email, products), ensure_ascii=False)
         },
         'shop_url': settings.YANDEX_MONEY_SHOP_URL,
     }
