@@ -11,7 +11,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import AnonymousUser
 from django.http import Http404, JsonResponse, HttpResponseServerError, HttpResponseRedirect
 from django.views.decorators.csrf import csrf_exempt
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.core.urlresolvers import reverse
 from django.core.validators import validate_email
 from django.template.loader import get_template
@@ -19,6 +19,8 @@ from django.utils.crypto import constant_time_compare
 from django.utils.translation import ugettext as _
 
 import requests
+from decimal import Decimal
+
 from emails.django import Message
 from rest_framework import status, permissions
 from rest_framework.response import Response
@@ -27,13 +29,54 @@ from rest_framework.views import APIView
 from payments.models import YandexPayment
 from plp.models import CourseSession, User, Course, EnrollmentReason
 from plp.notifications.base import get_host_url
-from plp_edmodule.models import EducationalModule, EducationalModuleEnrollmentReason
+from plp_edmodule.models import EducationalModule, EducationalModuleEnrollmentReason, PromoCode
 from plp.utils.helpers import get_prefix_and_site
 from .forms import CorporatePaymentForm
 from .models import UpsaleLink, ObjectEnrollment, OuterPayment
 from .utils import get_merchant_receipt, payment_for_user, client, outer_payment_for_user, get_or_create_user, get_payment_urls, get_object_info, get_obj_price
 
 PAYMENT_SESSION_KEY = 'opro_payment_current_order'
+
+def apply_promocode(promocode, product_id, product_type, session_id, only_first_course, request=None):
+    try:
+        obj = PromoCode.objects.get(code=promocode)
+    except ObjectDoesNotExist:
+        return {
+            'status': 1,
+            'message': _(u'Промокод не найден')
+        }
+
+    validation_result = obj.validate(int(product_id), product_type)
+    if validation_result['status'] != 0:
+        return validation_result
+
+    calculations = obj.calculate(product_id=product_id, session_id=session_id, only_first_course=only_first_course)
+    if request:
+        request.session['promocode'] = {
+            'code': promocode,
+            'new_price' : "%.2f" % calculations['new_price'].quantize(Decimal('.00'))
+        }
+    return calculations
+
+    return {
+        'status': 1,
+        'response': _(u'Что-то пошло не так')
+    }
+
+def promocode(request):
+    if request.method == 'POST' and request.is_ajax():
+        promocode = request.POST.get('promocode', '').strip()
+        product_id = request.POST.get('product_id', '').strip()
+        product_type = request.POST.get('product_type', '').strip()
+        session_id = request.POST.get('session_id', '').strip()
+        only_first_course = True if request.POST.get('only_first_course', '').strip() == 'True' else False
+
+        result = apply_promocode(promocode, product_id, product_type, session_id, only_first_course, request=request)
+        
+        return JsonResponse(result)
+
+    else:
+        raise Http404
 
 def landing_op_payment_view(request):
     """
@@ -46,6 +89,7 @@ def landing_op_payment_view(request):
     module_id = request.GET.get('edmodule_id', '')
     utm_data = request.GET.get('_utm_data', '')
     only_first_course = bool(request.GET.get('only_first_course', False))
+    promocode = request.GET.get('promocode', '')
 
     if bool(session_id) == bool(module_id):
         raise Http404
@@ -92,16 +136,28 @@ def landing_op_payment_view(request):
     # Сценарий оплаты с регистрацией пользователя с лэндинга
     if request.method == 'POST' and request.is_ajax() and request.POST.get('with_landing_user', ''):
         try:
+            if promocode: 
+                result = apply_promocode(promocode, module_id, 'edmodule' if module_id else 'course', session_id, only_first_course)
+                if result['status'] == 0:
+                    new_price = result['new_price']
+                    promocode_message = None
+                elif result['status'] != 0:
+                    new_price = None
+                    promocode_message = result['message']
+            else:
+                new_price = None
+                promocode_message = None
+
             obj, verified_enrollment, upsales = get_object_info(request, session_id, module_id)
 
             if not verified_enrollment:
                 raise Http404
                 
-            session, first_session_id, obj_price, total_price, products = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales)
+            session, first_session_id, obj_price, total_price, products = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales, new_price)
             user = get_or_create_user(first_name, email)
             payment_urls = get_payment_urls(request, obj, user, session_id, utm_data) 
             payment = payment_for_user(request, verified_enrollment, set(upsales), total_price,
-                                user=user, only_first_course=only_first_course, first_session_id=first_session_id)
+                                user=user, only_first_course=only_first_course, first_session_id=first_session_id, promocode=promocode)
 
             return JsonResponse({
                 'status': 0,
@@ -111,6 +167,7 @@ def landing_op_payment_view(request):
                 'cps_email': user.email,
                 'shopFailURL': payment_urls['payment_fail'],
                 'shopSuccessURL': payment_urls['payment_success'],
+                'promocode_message': promocode_message,
                 'ym_merchant_receipt': get_merchant_receipt(user.email, products)
             })
         except Exception as e:
@@ -134,11 +191,17 @@ def landing_op_payment_view(request):
     # Сценарий оплаты с регистрацией пользователя с сайта OpenProfession
     if request.method == 'POST' and request.is_ajax():
         try:
+            if 'promocode' in request.session:
+                new_price = Decimal(request.session['promocode']['new_price'])
+                session, first_session_id, obj_price, total_price, products = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales, new_price)
+
             user = get_or_create_user(request.POST.get('firstname', ''), request.POST.get('email', ''))
             payment_urls = get_payment_urls(request, obj, user, session_id, utm_data) 
             payment = payment_for_user(request, verified_enrollment, set(upsales), total_price,
-                             user=user, only_first_course=only_first_course, first_session_id=first_session_id)
-                            
+                             user=user, only_first_course=only_first_course, first_session_id=first_session_id, promocode=request.session.get('promocode', {}).get('code', None))
+
+            del request.session['promocode']
+
             return JsonResponse({
                 'status': 0,
                 'orderNumber': payment.order_number,
@@ -167,6 +230,7 @@ def landing_op_payment_view(request):
         'with_landing_user': with_landing_user,
         'fields': payment_fields,
         'shop_url': settings.YANDEX_MONEY_SHOP_URL,
+        'only_first_course': only_first_course,
     }
     if session_id:
         context['session'] = obj
@@ -226,6 +290,18 @@ def landing_op_payment_status(request, payment_type, obj_id, user_id, status):
         })
         if metadata.get('edmodule', {}).get('first_session_id'):
             context['first_session'] = get_object_or_404(CourseSession, id=metadata['edmodule']['first_session_id'])
+
+        promocode = metadata.get('promocode', None)
+        if promocode:
+            try:
+                promocode_object = PromoCode.objects.get(code=promocode)
+                promocode_object.used += 1
+                promocode_object.save()
+            except ObjectDoesNotExist:
+                logging.error('Promocode %s wasn\'t found for payment %s' % (
+                    promocode, payment.id
+                ))
+
 
         context['landing'] = True
         context['landing_username'] = user.first_name
@@ -325,13 +401,25 @@ def op_payment_view(request):
     if request.method == 'POST' and request.is_ajax():
         # действительно создаем платеж только перед отправкой
         try:
+            if 'promocode' in request.session:
+                new_price = Decimal(request.session['promocode']['new_price'])
+                total_price = 0 if obj_is_paid else obj_price
+                total_price += upsales_price
+
             order_number = request.session.get(PAYMENT_SESSION_KEY)
             payment_for_user(request, verified_enrollment, set(upsales) - set(paid_upsales), total_price,
-                             only_first_course=only_first_course, first_session_id=first_session_id, order_number=order_number)
+                             only_first_course=only_first_course, first_session_id=first_session_id, order_number=order_number, promocode=request.session.get('promocode', {}).get('code', None))
+            
+            del request.session['promocode']
             del request.session[PAYMENT_SESSION_KEY]
+            
             return JsonResponse({'status': 0})
         except:
-            return JsonResponse({'status': 1})
+            import traceback
+            return JsonResponse({
+                'status': 1,
+                'traceback': str(traceback.format_exc())
+                })
 
     payment = payment_for_user(request, verified_enrollment, set(upsales) - set(paid_upsales), total_price, create=False,
                                only_first_course=only_first_course, first_session_id=first_session_id)
@@ -439,6 +527,17 @@ def op_payment_status(request, payment_type, obj_id, user_id, status):
         })
         if metadata.get('edmodule', {}).get('first_session_id'):
             context['first_session'] = get_object_or_404(CourseSession, id=metadata['edmodule']['first_session_id'])
+
+        promocode = metadata.get('promocode', None)
+        if promocode:
+            try:
+                promocode_object = PromoCode.objects.get(code=promocode)
+                promocode_object.used += 1
+                promocode_object.save()
+            except ObjectDoesNotExist:
+                logging.error('Promocode %s wasn\'t found for payment %s' % (
+                    promocode, payment.id
+                ))
 
     return render(request, template_path, context)
 

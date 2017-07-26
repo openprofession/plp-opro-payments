@@ -17,4 +17,5 @@ urlpatterns = [
         TemplateView.as_view(template_name='opro_payments/thank_you_page.html'),
         name='op_payment_corporate_order_done'),
     url(r'^op_payment/api/enroll/?$', views.EnrollmentApiView.as_view(), name='op-api-enrollment'),
+    url(r'^promocode/?$', views.promocode, name='promocode'),
 ]

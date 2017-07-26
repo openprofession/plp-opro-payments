@@ -67,7 +67,7 @@ def get_object_info(request, session_id, module_id):
 
     return obj, verified_enrollment, upsales
 
-def get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales):
+def get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales, new_price=None):
     session = None
     first_session_id = None
     products = []
@@ -96,6 +96,10 @@ def get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsal
                 'price': obj_price 
             })
             
+    if new_price:
+        obj_price = new_price
+        products[0]['price'] = new_price
+
     upsales_price = 0
     for i in upsales:
         upsale_price = i.get_payment_price()
@@ -105,7 +109,7 @@ def get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsal
             'price': upsale_price
         })
 
-    total_price = obj_price + upsales_price
+    total_price = float(obj_price) + upsales_price
 
     return session, first_session_id, obj_price, total_price, products
 
@@ -164,7 +168,7 @@ def get_payment_urls(request, obj, user, session_id, utm_data):
     return urls
 
 def payment_for_user(request, enrollment_type, upsale_links, price, create=True, only_first_course=False,
-                     first_session_id=None, order_number=None, user=None):
+                     first_session_id=None, order_number=None, user=None, promocode=None):
     """
     Создание объекта YandexPayment для пользователя с сохранением в бд или без
     :param request: объект request
@@ -172,6 +176,7 @@ def payment_for_user(request, enrollment_type, upsale_links, price, create=True,
     :param upsale_links: список UpsaleLink
     :param price: int
     :param create: bool - сохранять созданый объект или нет
+    :param promocode: str - промокод, по которому была совершена оплата
     :param only_first_course: bool - используется в случае оплаты модуля
     :param first_session_id: int - обязательный аргумент в случае only_first_course=True
     :param order_number: str - взять заданный order_number вместо его генерации (действует только для модуля)
@@ -224,6 +229,9 @@ def payment_for_user(request, enrollment_type, upsale_links, price, create=True,
             fsi = first_session_id if only_first_course else None
             data = prepare_ga_data(order_number, request, price, enrollment_type.module, fsi)
         metadata['google_analytics'] = data
+
+    if promocode:
+        metadata['promocode'] = promocode
 
     try:
         payment = YandexPayment.objects.get(order_number=order_number)
