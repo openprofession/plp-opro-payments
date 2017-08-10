@@ -9,6 +9,7 @@ from django.conf import settings
 from django.utils import timezone
 from django.core.urlresolvers import reverse
 from django.shortcuts import get_object_or_404
+from django.core.exceptions import ObjectDoesNotExist
 import requests
 from raven import Client
 from payments.helpers import payment_for_participant_complete
@@ -17,7 +18,7 @@ from payments.sources.yandex_money.signals import payment_completed
 from plp.models import Course, Participant, EnrollmentReason, SessionEnrollmentType, User, CourseSession
 from plp.utils.edx_enrollment import EDXEnrollmentError
 from plp_edmodule.models import EducationalModuleEnrollmentType, EducationalModuleEnrollment, \
-    EducationalModuleEnrollmentReason, EducationalModule
+    EducationalModuleEnrollmentReason, EducationalModule, PromoCode
 from plp_edmodule.signals import edmodule_payed
 from plp.notifications.base import get_host_url
 from .models import UpsaleLink, ObjectEnrollment
@@ -67,7 +68,7 @@ def get_object_info(request, session_id, module_id):
 
     return obj, verified_enrollment, upsales
 
-def get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales):
+def get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales, new_price=None):
     session = None
     first_session_id = None
     products = []
@@ -96,6 +97,10 @@ def get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsal
                 'price': obj_price 
             })
             
+    if new_price:
+        obj_price = new_price
+        products[0]['price'] = new_price
+
     upsales_price = 0
     for i in upsales:
         upsale_price = i.get_payment_price()
@@ -105,7 +110,7 @@ def get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsal
             'price': upsale_price
         })
 
-    total_price = obj_price + upsales_price
+    total_price = float(obj_price) + upsales_price
 
     return session, first_session_id, obj_price, total_price, products
 
@@ -164,7 +169,7 @@ def get_payment_urls(request, obj, user, session_id, utm_data):
     return urls
 
 def payment_for_user(request, enrollment_type, upsale_links, price, create=True, only_first_course=False,
-                     first_session_id=None, order_number=None, user=None):
+                     first_session_id=None, order_number=None, user=None, promocode=None):
     """
     Создание объекта YandexPayment для пользователя с сохранением в бд или без
     :param request: объект request
@@ -172,6 +177,7 @@ def payment_for_user(request, enrollment_type, upsale_links, price, create=True,
     :param upsale_links: список UpsaleLink
     :param price: int
     :param create: bool - сохранять созданый объект или нет
+    :param promocode: str - промокод, по которому была совершена оплата
     :param only_first_course: bool - используется в случае оплаты модуля
     :param first_session_id: int - обязательный аргумент в случае only_first_course=True
     :param order_number: str - взять заданный order_number вместо его генерации (действует только для модуля)
@@ -224,6 +230,9 @@ def payment_for_user(request, enrollment_type, upsale_links, price, create=True,
             fsi = first_session_id if only_first_course else None
             data = prepare_ga_data(order_number, request, price, enrollment_type.module, fsi)
         metadata['google_analytics'] = data
+
+    if promocode:
+        metadata['promocode'] = promocode
 
     try:
         payment = YandexPayment.objects.get(order_number=order_number)
@@ -525,6 +534,16 @@ def push_google_analytics_for_payment(payment):
                 })
                 logging.error('Failed to send google analytics data for payment %s: %s' % (payment.id, e))
 
+def increase_promocode_usage(promocode, payment_id):
+    if promocode:
+        try:
+            obj = PromoCode.objects.get(code=promocode)
+            obj.used += 1
+            obj.save()
+        except ObjectDoesNotExist:
+            logging.error('Promocode %s wasn\'t found for payment %s' % (
+                promocode, payment_id
+            ))
 
 payment_completed.disconnect(payment_for_participant_complete)
 payment_completed.connect(payment_for_user_complete)
