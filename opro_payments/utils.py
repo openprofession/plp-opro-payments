@@ -9,6 +9,7 @@ from django.conf import settings
 from django.utils import timezone
 from django.core.urlresolvers import reverse
 from django.shortcuts import get_object_or_404
+from django.core.exceptions import ObjectDoesNotExist
 import requests
 from raven import Client
 from payments.helpers import payment_for_participant_complete
@@ -17,7 +18,7 @@ from payments.sources.yandex_money.signals import payment_completed
 from plp.models import Course, Participant, EnrollmentReason, SessionEnrollmentType, User, CourseSession
 from plp.utils.edx_enrollment import EDXEnrollmentError
 from plp_edmodule.models import EducationalModuleEnrollmentType, EducationalModuleEnrollment, \
-    EducationalModuleEnrollmentReason, EducationalModule
+    EducationalModuleEnrollmentReason, EducationalModule, PromoCode
 from plp_edmodule.signals import edmodule_payed
 from plp.notifications.base import get_host_url
 from .models import UpsaleLink, ObjectEnrollment
@@ -533,6 +534,16 @@ def push_google_analytics_for_payment(payment):
                 })
                 logging.error('Failed to send google analytics data for payment %s: %s' % (payment.id, e))
 
+def increase_promocode_usage(promocode, payment_id):
+    if promocode:
+        try:
+            obj = PromoCode.objects.get(code=promocode)
+            obj.used += 1
+            obj.save()
+        except ObjectDoesNotExist:
+            logging.error('Promocode %s wasn\'t found for payment %s' % (
+                promocode, payment_id
+            ))
 
 payment_completed.disconnect(payment_for_participant_complete)
 payment_completed.connect(payment_for_user_complete)

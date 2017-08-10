@@ -4,6 +4,7 @@ import json
 import hmac
 import logging
 import re
+import traceback
 
 from django.conf import settings
 from django.shortcuts import get_object_or_404, render
@@ -33,7 +34,7 @@ from plp_edmodule.models import EducationalModule, EducationalModuleEnrollmentRe
 from plp.utils.helpers import get_prefix_and_site
 from .forms import CorporatePaymentForm
 from .models import UpsaleLink, ObjectEnrollment, OuterPayment
-from .utils import get_merchant_receipt, payment_for_user, client, outer_payment_for_user, get_or_create_user, get_payment_urls, get_object_info, get_obj_price
+from .utils import increase_promocode_usage, get_merchant_receipt, payment_for_user, client, outer_payment_for_user, get_or_create_user, get_payment_urls, get_object_info, get_obj_price
 
 PAYMENT_SESSION_KEY = 'opro_payment_current_order'
 
@@ -69,7 +70,7 @@ def promocode(request):
         product_id = request.POST.get('product_id', '').strip()
         product_type = request.POST.get('product_type', '').strip()
         session_id = request.POST.get('session_id', '').strip()
-        only_first_course = True if request.POST.get('only_first_course', '').strip() == 'True' else False
+        only_first_course = True if request.POST.get('only_first_course', '').strip().lower() == 'true' else False
 
         result = apply_promocode(promocode, product_id, product_type, session_id, only_first_course, request=request)
         
@@ -171,7 +172,6 @@ def landing_op_payment_view(request):
                 'ym_merchant_receipt': get_merchant_receipt(user.email, products)
             })
         except Exception as e:
-            import traceback
             return JsonResponse({
                 'status': 1,
                 'traceback': str(traceback.format_exc())
@@ -193,12 +193,21 @@ def landing_op_payment_view(request):
         try:
             if 'promocode' in request.session:
                 new_price = Decimal(request.session['promocode']['new_price'])
-                session, first_session_id, obj_price, total_price, products = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales, new_price)
+                session, first_session_id, obj_price, total_price, products = get_obj_price(
+                                                                                        session_id, 
+                                                                                        verified_enrollment, 
+                                                                                        only_first_course, 
+                                                                                        obj, 
+                                                                                        upsales, 
+                                                                                        new_price
+                                                                                    )
 
             user = get_or_create_user(request.POST.get('firstname', ''), request.POST.get('email', ''))
             payment_urls = get_payment_urls(request, obj, user, session_id, utm_data) 
+            
             payment = payment_for_user(request, verified_enrollment, set(upsales), total_price,
-                             user=user, only_first_course=only_first_course, first_session_id=first_session_id, promocode=request.session.get('promocode', {}).get('code', None))
+                             user=user, only_first_course=only_first_course, first_session_id=first_session_id, 
+                             promocode=request.session.get('promocode', {}).get('code', None))
 
             del request.session['promocode']
 
@@ -213,7 +222,6 @@ def landing_op_payment_view(request):
                 'ym_merchant_receipt': get_merchant_receipt(user.email, products)
             })
         except Exception as e:
-            import traceback
             return JsonResponse({
                 'status': 1,
                 'traceback': str(traceback.format_exc())
@@ -290,18 +298,8 @@ def landing_op_payment_status(request, payment_type, obj_id, user_id, status):
         })
         if metadata.get('edmodule', {}).get('first_session_id'):
             context['first_session'] = get_object_or_404(CourseSession, id=metadata['edmodule']['first_session_id'])
-
-        promocode = metadata.get('promocode', None)
-        if promocode:
-            try:
-                promocode_object = PromoCode.objects.get(code=promocode)
-                promocode_object.used += 1
-                promocode_object.save()
-            except ObjectDoesNotExist:
-                logging.error('Promocode %s wasn\'t found for payment %s' % (
-                    promocode, payment.id
-                ))
-
+        
+        increase_promocode_usage(metadata.get('promocode', None), payment.id)
 
         context['landing'] = True
         context['landing_username'] = user.first_name
@@ -415,7 +413,6 @@ def op_payment_view(request):
             
             return JsonResponse({'status': 0})
         except:
-            import traceback
             return JsonResponse({
                 'status': 1,
                 'traceback': str(traceback.format_exc())
@@ -528,16 +525,7 @@ def op_payment_status(request, payment_type, obj_id, user_id, status):
         if metadata.get('edmodule', {}).get('first_session_id'):
             context['first_session'] = get_object_or_404(CourseSession, id=metadata['edmodule']['first_session_id'])
 
-        promocode = metadata.get('promocode', None)
-        if promocode:
-            try:
-                promocode_object = PromoCode.objects.get(code=promocode)
-                promocode_object.used += 1
-                promocode_object.save()
-            except ObjectDoesNotExist:
-                logging.error('Promocode %s wasn\'t found for payment %s' % (
-                    promocode, payment.id
-                ))
+        increase_promocode_usage(metadata.get('promocode', None), payment.id)
 
     return render(request, template_path, context)
 
