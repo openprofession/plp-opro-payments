@@ -209,7 +209,8 @@ def landing_op_payment_view(request):
                              user=user, only_first_course=only_first_course, first_session_id=first_session_id, 
                              promocode=request.session.get('promocode', {}).get('code', None))
 
-            del request.session['promocode']
+            if 'promocode' in request.session:
+                del request.session['promocode']
 
             return JsonResponse({
                 'status': 0,
@@ -408,7 +409,9 @@ def op_payment_view(request):
             payment_for_user(request, verified_enrollment, set(upsales) - set(paid_upsales), total_price,
                              only_first_course=only_first_course, first_session_id=first_session_id, order_number=order_number, promocode=request.session.get('promocode', {}).get('code', None))
             
-            del request.session['promocode']
+            if 'promocode' in request.session:
+                del request.session['promocode']
+
             del request.session[PAYMENT_SESSION_KEY]
             
             return JsonResponse({'status': 0})
