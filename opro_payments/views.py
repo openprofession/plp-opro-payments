@@ -402,7 +402,7 @@ def op_payment_view(request):
         try:
             if 'promocode' in request.session:
                 new_price = Decimal(request.session['promocode']['new_price'])
-                total_price = 0 if obj_is_paid else new_price
+                total_price = 0 if obj_is_paid else float(new_price)
                 total_price += upsales_price
 
             order_number = request.session.get(PAYMENT_SESSION_KEY)
