@@ -91,6 +91,7 @@ def landing_op_payment_view(request):
     utm_data = request.GET.get('_utm_data', '')
     only_first_course = bool(request.GET.get('only_first_course', False))
     promocode = request.GET.get('promocode', '')
+    contented = True if request.GET.get('contented', '') == 'true' else False
 
     if bool(session_id) == bool(module_id):
         raise Http404
@@ -127,6 +128,7 @@ def landing_op_payment_view(request):
     if with_landing_user:
         context = {
             'landing': True,
+            'contented': contented,
             'with_landing_user': with_landing_user,
             'fields': payment_fields,
             'shop_url': settings.YANDEX_MONEY_SHOP_URL,
@@ -236,6 +238,7 @@ def landing_op_payment_view(request):
         'first_session': session,
         'verified': verified_enrollment,
         'landing': True,
+        'contented': contented,
         'with_landing_user': with_landing_user,
         'fields': payment_fields,
         'shop_url': settings.YANDEX_MONEY_SHOP_URL,
