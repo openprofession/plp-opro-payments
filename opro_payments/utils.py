@@ -7,9 +7,12 @@ import time
 import urllib
 from django.conf import settings
 from django.utils import timezone
+from django.core.mail import send_mail
 from django.core.urlresolvers import reverse
 from django.shortcuts import get_object_or_404
 from django.core.exceptions import ObjectDoesNotExist
+from django.template.loader import render_to_string
+from django.utils.translation import ugettext as _
 import requests
 from raven import Client
 from payments.helpers import payment_for_participant_complete
@@ -204,6 +207,7 @@ def payment_for_user(request, enrollment_type, upsale_links, price, create=True,
     metadata = {
         'user': {
             'id': user.id,
+            'sso_id': user.sso_id,
             'username': user.username
         },
         'upsale_links': [i.id for i in upsale_links],
@@ -272,12 +276,15 @@ def payment_for_user_complete(sender, **kwargs):
     new_mode = metadata.get('new_mode')
     upsale_links = metadata.get('upsale_links')
     edmodule = metadata.get('edmodule')
+    course_payment = True
 
     if (user and new_mode and upsale_links is not None):
         _payment_for_session_complete(payment, metadata, user, new_mode, upsale_links)
     elif (user and edmodule and upsale_links is not None):
         _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links)
+        course_payment = False
     push_google_analytics_for_payment(payment)
+    push_zapier_analytics_for_payment(payment, course_payment, new_mode, edmodule)
 
 
 def outer_payment_for_user(user, sku_parts, new_mode, upsale_links):
@@ -533,6 +540,120 @@ def push_google_analytics_for_payment(payment):
                     'exception': str(e),
                 })
                 logging.error('Failed to send google analytics data for payment %s: %s' % (payment.id, e))
+
+
+def push_zapier_analytics_for_payment(payment, course_payment, new_mode, edmodule):
+    """
+    отправка данных об оплате в zapier
+    :param payment: YandexPayment
+    :param course_payment: bool
+    :param new_mode: SessionEnrollmentType
+    :param edmodule: dict
+    :return:
+    """
+    url = getattr(settings, 'ZAPIER_WEBHOOK_URL', None)
+    if url is None:
+        if client:
+            client.captureMessage('ZAPIER_WEBHOOK_URL is not defined')
+        logging.error('ZAPIER_WEBHOOK_URL is not defined')
+        return
+    try:
+        metadata = json.loads(payment.metadata)
+    except (ValueError, TypeError):
+        metadata = {}
+    ga_data = metadata.get('google_analytics', [])
+    cid = None
+    if ga_data:
+        cid = ga_data[0].get('cid')
+    user = payment.user
+    promocode = metadata.get("promocode")
+    promocode_discount, discount_price = None, None
+    if promocode:
+        pc = PromoCode.objects.filter(code=promocode).first()
+        if pc:
+            promocode_discount = float(pc.discount_percent) if pc.discount_percent is not None else None
+            discount_price = float(pc.discount_price) if pc.discount_price is not None else None
+
+    common_payment_info = {
+        "sum": float(payment.order_amount),
+        "sum_result": float(payment.shop_amount or 0),
+        "time": payment.performed_datetime.isoformat(),
+        "promocode": metadata.get("promocode"),
+        "google_analytics": ga_data,
+    }
+    if discount_price is not None:
+        common_payment_info['promocode_cost'] = discount_price
+    if promocode_discount is not None:
+        common_payment_info['promocode_discount'] = promocode_discount
+
+    if course_payment:
+        enr_type = SessionEnrollmentType.objects.get(id=new_mode['id'])
+        session = enr_type.session
+        try:
+            course_ext = session.course.extended_params
+            organizations = list(course_ext.authors.values_list('slug', flat=True))
+        except:
+            organizations = []
+        common_payment_info.update({
+            "course_id": session.id,
+            "course_name": session.course.title,
+            "organization": {
+                "university": [session.course.university.slug],
+                "organizations": organizations,
+            }
+        })
+    else:
+        enr_type = EducationalModuleEnrollmentType.objects.get(module__id=edmodule['id'], mode=edmodule['mode'])
+        module = enr_type.module
+        common_payment_info.update({
+            "edmodule_id": module.id,
+            "edmodule_name": module.title,
+            "organization": {
+                "university": list(module.courses.values_list('university__slug', flat=True)),
+                "organizations": [i.slug for i in module.get_authors()],
+            }
+        })
+
+    data = {
+        "action_name": "PLP_payment",
+        "user_info": {
+            "user_id": user.sso_id,
+            "username": user.username,
+            "email": user.email,
+            "firstName": user.first_name,
+            "lastName": user.last_name,
+            "phone": user.phone,
+            "client_id": cid,
+        },
+        "payment_info": common_payment_info,
+    }
+
+    try:
+        r = requests.post(url, json=data, timeout=getattr(settings, 'CONNECTION_TIMEOUT', 10))
+        assert r.status_code == 200, 'Status code %s' % r.status_code
+    except Exception as e:
+        msg = u'%s' % e
+        try:
+            ctx = {
+                'error': msg,
+                'data': json.dumps(data, ensure_ascii=False, indent=4)
+            }
+            logging.error(u'Failed to send registration data %s' % e)
+            send_mail(
+                _(u'Webhook недоступен'),
+                render_to_string('opro_payments/emails/debug_email_error_message.txt', ctx),
+                settings.EMAIL_NOTIFICATIONS_FROM,
+                [getattr(settings, 'ENROLLMENT_API_DEBUG_EMAIL', 'debug@openprofession.ru')],
+            )
+        except Exception as err:
+            logging.error(u'Failed to send debug email: %s' % err)
+            if client:
+                client.captureMessage('Failed to send debug email', extra={
+                    'exception': u'%s' % err,
+                    'msg': msg,
+                    'data': data,
+                })
+
 
 def increase_promocode_usage(promocode, payment_id):
     if promocode:

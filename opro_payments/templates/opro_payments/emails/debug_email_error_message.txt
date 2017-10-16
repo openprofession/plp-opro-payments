@@ -1,0 +1,4 @@
+{% load i18n %}
+{% blocktrans %}Ошибка при отправке данных: {{ error }}{% endblocktrans %}
+
+{{ data|safe }}
