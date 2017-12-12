@@ -357,8 +357,8 @@ def gift_op_payment_view(request):
                                 user=gift_sender, 
                                 only_first_course=only_first_course, 
                                 first_session_id=first_session_id,
-                                gift_receiver=gift_receiver,
-                                promocode=gift_form.cleaned_data['promocode'] if new_price else None)
+                                gift_receiver=gift_receiver)
+                                #promocode=gift_form.cleaned_data['promocode'] if new_price else None)
 
                 return JsonResponse({
                     'status': 0,
