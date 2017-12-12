@@ -352,7 +352,7 @@ def gift_op_payment_view(request):
 
                 gift_sender = get_or_create_user(gift_form.cleaned_data['gift_sender'], gift_form.cleaned_data['gift_sender_email'])
                 gift_receiver = get_or_create_user(gift_form.cleaned_data['gift_receiver'], gift_form.cleaned_data['gift_receiver_email'], send_mail=False)
-                payment_urls = get_payment_urls(request, obj, gift_sender, session_id, utm_data)             
+                payment_urls = get_gift_payment_urls(request, obj, gift_sender, session_id, utm_data)             
                 payment = payment_for_user(request, verified_enrollment, set(upsales), total_price,
                                 user=gift_sender, 
                                 only_first_course=only_first_course, 
