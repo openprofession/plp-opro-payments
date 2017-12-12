@@ -351,7 +351,7 @@ def gift_op_payment_view(request):
                 session, first_session_id, obj_price, total_price, products = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales, new_price)
 
                 gift_sender = get_or_create_user(gift_form.cleaned_data['gift_sender'], gift_form.cleaned_data['gift_sender_email'])
-                gift_receiver = get_or_create_user(gift_form.cleaned_data['gift_receiver'], gift_form.cleaned_data['gift_receiver_email'])
+                gift_receiver = get_or_create_user(gift_form.cleaned_data['gift_receiver'], gift_form.cleaned_data['gift_receiver_email'], send_mail=False)
                 payment_urls = get_payment_urls(request, obj, gift_sender, session_id, utm_data)             
                 payment = payment_for_user(request, verified_enrollment, set(upsales), total_price,
                                 user=gift_sender, 
@@ -386,6 +386,76 @@ def gift_op_payment_view(request):
     }
 
     return render(request, 'opro_payments/gift_op_payment.html', context)
+
+def gift_op_payment_status(request, payment_type, obj_id, user_id, status):
+    """
+    страница payment success/fail, на которую редиректится пользователь после
+    оплаты в яндекс кассе с лэндинга
+    """
+
+    template_path = "profile/gift_payment_{}.html".format(status)
+
+    obj_model = CourseSession if payment_type == 'session' else EducationalModule
+
+    obj = get_object_or_404(obj_model, id=obj_id)
+    user = get_object_or_404(User, id=user_id)
+
+    if payment_type == 'session':
+        context = {'session': obj, 'object': obj.course}
+    else:
+        context = {'module': obj, 'object': obj}
+
+    if status == 'success':
+        if payment_type == 'session':
+            order_number = "{}-{}-{}-".format('verified', obj.id, user.id)
+        else:
+            order_number = "edmodule-{}-{}-".format(obj.id, user.id)
+        # считаем, что к моменту перехода на страницу подтверждения оплаты, нам пришел ответ от Яндекса
+        # и были созданы "записи на объекты", иначе пользователь не увидит промокоды
+        payment = YandexPayment.objects.filter(order_number__startswith=order_number).order_by('-id').first()
+        if not payment:
+            raise Http404
+        if not payment.is_payed:
+            logging.error('User %s was redirected to successfull payment page before payment %s was processed' % (
+                user.id, payment.id
+            ))
+            if client:
+                client.captureMessage('User was redirected to successfull payment page before payment was processed',
+                                      extra={'user_id': user.id, 'payment_id': payment.id})
+        metadata = json.loads(payment.metadata or '{}')
+        upsale_links = metadata.get('upsale_links', [])
+        upsales = UpsaleLink.objects.filter(id__in=upsale_links)
+        object_enrollments = ObjectEnrollment.objects.filter(user=user, upsale__id__in=upsale_links)
+        promocodes = []
+        for obj in object_enrollments:
+            data = obj.jsonfield or {}
+            promo = data.get('promo_code')
+            if promo:
+                promocodes.append((obj.upsale.upsale.title, promo))
+        context.update({
+            'promocodes': promocodes,
+            'upsale_links': upsales,
+            'shop_url': getattr(settings, 'OPRO_PAYMENT_SHOP_URL', ''),
+        })
+        if metadata.get('edmodule', {}).get('first_session_id'):
+            context['first_session'] = get_object_or_404(CourseSession, id=metadata['edmodule']['first_session_id'])
+
+        promocode = metadata.get('promocode', None)
+        if promocode:
+            try:
+                promocode_object = PromoCode.objects.get(code=promocode)
+                promocode_object.used += 1
+                promocode_object.save()
+            except ObjectDoesNotExist:
+                logging.error('Promocode %s wasn\'t found for payment %s' % (
+                    promocode, payment.id
+                ))
+
+
+        context['landing'] = True
+        context['landing_username'] = user.first_name
+
+    return render(request, template_path, context)
 
 @login_required
 def op_payment_view(request):

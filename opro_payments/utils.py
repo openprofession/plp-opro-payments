@@ -117,13 +117,13 @@ def get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsal
 
     return session, first_session_id, obj_price, total_price, products
 
-def get_or_create_user(first_name, email):
+def get_or_create_user(first_name, email, send_mail=True):
     """
     Возвращает пользователя, если его нет - создает
     Для прохождения упрощенного сценарция задает пользователю переданное имя и пустую фамилию
     """
 
-    post_data = { 'emails': [email] }
+    post_data = { 'emails': [email], 'send_mail': send_mail }
     request_url = '{}/users/simple_mass_registration/'.format(settings.SSO_NPOED_URL)
     r = requests.post(
         request_url,
@@ -156,6 +156,34 @@ def get_payment_urls(request, obj, user, session_id, utm_data):
         'payment_type': 'session' if session_id else 'edmodule',
     })
     payment_success = host_url + reverse('landing_op_payment_status', kwargs={
+        'status': 'success',
+        'obj_id': obj.id,
+        'user_id': user.id,
+        'payment_type': 'session' if session_id else 'edmodule',
+    })
+    if utm_data:
+        payment_success = '{}?{}'.format(payment_success, utm_data)
+
+    urls = {
+        'payment_fail': payment_fail,
+        'payment_success': payment_success
+    }
+
+    return urls
+
+def get_gift_payment_urls(request, obj, user, session_id, utm_data):
+    """
+    Возвращает значения для редиректа пользователя после успешной / неуспешной оплаты
+    """
+
+    host_url = get_host_url(request)
+    payment_fail = host_url + reverse('gift_op_payment_status', kwargs={
+        'status': 'fail',
+        'obj_id': obj.id,
+        'user_id': user.id,
+        'payment_type': 'session' if session_id else 'edmodule',
+    })
+    payment_success = host_url + reverse('gift_op_payment_status', kwargs={
         'status': 'success',
         'obj_id': obj.id,
         'user_id': user.id,
@@ -345,7 +373,8 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
             ).exists()
             reason = EnrollmentReason.objects.create(**params)
             Participant.objects.filter(id=participant.id).update(sent_to_edx=timezone.now())
-            reason.send_confirmation_email(upsales=upsales, promocodes=promocodes, paid_for_session=paid_for_session)
+            if not metadata.get('gift_receiver'):
+                reason.send_confirmation_email(upsales=upsales, promocodes=promocodes, paid_for_session=paid_for_session)
         except EDXEnrollmentError as e:
             logging.error('Failed to push verified enrollment %s to edx for user %s: %s' % (
                 session, user, e
@@ -415,7 +444,8 @@ def _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links
             try:
                 reason = EnrollmentReason.objects.create(**params)
                 Participant.objects.filter(id=participant.id).update(sent_to_edx=timezone.now())
-                reason.send_confirmation_email()
+                if not metadata.get('gift_receiver'):
+                    reason.send_confirmation_email()
             except EDXEnrollmentError as e:
                 logging.error('Failed to push verified enrollment %s to edx for user %s: %s' % (
                     session, user, e
