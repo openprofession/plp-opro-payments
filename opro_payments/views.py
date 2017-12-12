@@ -34,7 +34,7 @@ from plp_edmodule.models import EducationalModule, EducationalModuleEnrollmentRe
 from plp.utils.helpers import get_prefix_and_site
 from .forms import CorporatePaymentForm, GiftForm
 from .models import UpsaleLink, ObjectEnrollment, OuterPayment
-from .utils import increase_promocode_usage, get_merchant_receipt, payment_for_user, client, outer_payment_for_user, get_or_create_user, get_payment_urls, get_object_info, get_obj_price
+from .utils import increase_promocode_usage, get_merchant_receipt, payment_for_user, client, outer_payment_for_user, get_or_create_user, get_payment_urls, get_gift_payment_urls, get_object_info, get_obj_price
 
 PAYMENT_SESSION_KEY = 'opro_payment_current_order'
 
