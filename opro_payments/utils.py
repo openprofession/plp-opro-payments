@@ -238,6 +238,12 @@ def payment_for_user(request, enrollment_type, upsale_links, price, create=True,
     if promocode:
         metadata['promocode'] = promocode
 
+    if gift_receiver:
+        metadata['gift_receiver'] = {
+            'id': gift_receiver.id,
+            'username': gift_receiver.username
+        }
+
     try:
         payment = YandexPayment.objects.get(order_number=order_number)
         if payment.order_amount != price:
@@ -272,7 +278,7 @@ def payment_for_user_complete(sender, **kwargs):
     payment = sender
     metadata = json.loads(payment.metadata or "{}")
 
-    user = metadata.get('user')
+    user = metadata.get('gift_receiver') if metadata.get('gift_receiver') else metadata.get('user')
     new_mode = metadata.get('new_mode')
     upsale_links = metadata.get('upsale_links')
     edmodule = metadata.get('edmodule')

@@ -10,7 +10,7 @@ from django.conf import settings
 from django.shortcuts import get_object_or_404, render
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import AnonymousUser
-from django.http import Http404, JsonResponse, HttpResponseServerError, HttpResponseRedirect
+from django.http import Http404, JsonResponse, HttpResponseServerError, HttpResponseRedirect, HttpResponseBadRequest
 from django.views.decorators.csrf import csrf_exempt
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.core.urlresolvers import reverse
@@ -309,6 +309,83 @@ def landing_op_payment_status(request, payment_type, obj_id, user_id, status):
         context['landing_username'] = user.first_name
 
     return render(request, template_path, context)  
+
+def gift_op_payment_view(request):
+
+    session_id = request.GET.get('course_session_id', '')
+    module_id = request.GET.get('edmodule_id', '')
+    utm_data = request.GET.get('_utm_data', '')
+    only_first_course = bool(request.GET.get('only_first_course', False))
+
+    if bool(session_id) == bool(module_id):
+        raise Http404
+    if (session_id and not session_id.isdigit()) or (module_id and not module_id.isdigit()):
+        raise Http404
+
+    payment_fields =  {
+        "shopId": settings.YANDEX_MONEY_SHOP_ID,
+        "scid": settings.YANDEX_MONEY_SCID,
+        "orderNumber": "",
+        "customerNumber": "",
+        "sum": "",
+        "cps_email": "",
+        "cps_phone": "",
+        "shopFailURL": "",
+        "shopSuccessURL": "",
+        "ym_merchant_receipt":""
+    }
+
+    obj, verified_enrollment, upsales = get_object_info(request, session_id, module_id)
+
+    if not verified_enrollment:
+        raise Http404
+
+    if request.method == 'POST' and request.is_ajax():
+        try:
+            gift_form = GiftForm(request.POST)
+            if gift_form.is_valid():
+                if gift_form.cleaned_data['promocode']:
+                    result = apply_promocode(gift_form.cleaned_data['promocode'], module_id, 'edmodule' if module_id else 'course', session_id, only_first_course)
+                    new_price = result['new_price'] if result['status'] == 0 else None 
+
+                session, first_session_id, obj_price, total_price, products = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales, new_price)
+
+                gift_sender = get_or_create_user(gift_form.cleaned_data['gift_sender'], gift_form.cleaned_data['gift_sender_email'])
+                gift_receiver = get_or_create_user(gift_form.cleaned_data['gift_receiver'], gift_form.cleaned_data['gift_receiver_email'])
+                payment_urls = get_payment_urls(request, obj, gift_sender, session_id, utm_data)             
+                payment = payment_for_user(request, verified_enrollment, set(upsales), total_price,
+                                user=gift_sender, 
+                                only_first_course=only_first_course, 
+                                first_session_id=first_session_id,
+                                gift_receiver=gift_receiver,
+                                promocode=gift_form.cleaned_data['promocode'] if new_price else None)
+
+                return JsonResponse({
+                    'status': 0,
+                    'orderNumber': payment.order_number,
+                    'customerNumber': payment.customer_number,
+                    'sum': payment.order_amount,
+                    'cps_email': gift_sender.email,
+                    'shopFailURL': payment_urls['payment_fail'],
+                    'shopSuccessURL': payment_urls['payment_success'],
+                    'ym_merchant_receipt': get_merchant_receipt(gift_sender.email, products)
+                })
+            else:
+                return HttpResponseBadRequest()
+        except Exception as e:
+            import traceback
+            return JsonResponse({
+                'status': 1,
+                'traceback': str(traceback.format_exc())
+                })
+
+    context = {
+        'form': GiftForm(),
+        'fields': payment_fields,
+        'shop_url': settings.YANDEX_MONEY_SHOP_URL,
+    }
+
+    return render(request, 'opro_payments/gift_op_payment.html', context)
 
 @login_required
 def op_payment_view(request):
