@@ -200,7 +200,7 @@ def get_gift_payment_urls(request, obj, user, session_id, utm_data):
     return urls
 
 def payment_for_user(request, enrollment_type, upsale_links, price, create=True, only_first_course=False,
-                     first_session_id=None, order_number=None, user=None, promocode=None):
+                     first_session_id=None, order_number=None, user=None, gift_receiver=None, promocode=None):
     """
     Создание объекта YandexPayment для пользователя с сохранением в бд или без
     :param request: объект request

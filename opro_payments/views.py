@@ -348,7 +348,7 @@ def gift_op_payment_view(request):
                     result = apply_promocode(gift_form.cleaned_data['promocode'], module_id, 'edmodule' if module_id else 'course', session_id, only_first_course)
                     new_price = result['new_price'] if result['status'] == 0 else None 
 
-                session, first_session_id, obj_price, total_price, products = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales, new_price)
+                session, first_session_id, obj_price, total_price, products = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales)
 
                 gift_sender = get_or_create_user(gift_form.cleaned_data['gift_sender'], gift_form.cleaned_data['gift_sender_email'])
                 gift_receiver = get_or_create_user(gift_form.cleaned_data['gift_receiver'], gift_form.cleaned_data['gift_receiver_email'], send_mail=False)
