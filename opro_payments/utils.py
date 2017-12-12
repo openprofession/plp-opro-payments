@@ -373,8 +373,8 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
             ).exists()
             reason = EnrollmentReason.objects.create(**params)
             Participant.objects.filter(id=participant.id).update(sent_to_edx=timezone.now())
-            if not metadata.get('gift_receiver'):
-                reason.send_confirmation_email(upsales=upsales, promocodes=promocodes, paid_for_session=paid_for_session)
+            #if not metadata.get('gift_receiver'):
+            reason.send_confirmation_email(upsales=upsales, promocodes=promocodes, paid_for_session=paid_for_session)
         except EDXEnrollmentError as e:
             logging.error('Failed to push verified enrollment %s to edx for user %s: %s' % (
                 session, user, e
@@ -444,8 +444,8 @@ def _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links
             try:
                 reason = EnrollmentReason.objects.create(**params)
                 Participant.objects.filter(id=participant.id).update(sent_to_edx=timezone.now())
-                if not metadata.get('gift_receiver'):
-                    reason.send_confirmation_email()
+                #if not metadata.get('gift_receiver'):
+                reason.send_confirmation_email()
             except EDXEnrollmentError as e:
                 logging.error('Failed to push verified enrollment %s to edx for user %s: %s' % (
                     session, user, e
