@@ -373,8 +373,8 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
             ).exists()
             reason = EnrollmentReason.objects.create(**params)
             Participant.objects.filter(id=participant.id).update(sent_to_edx=timezone.now())
-            #if not metadata.get('gift_receiver'):
-            reason.send_confirmation_email(upsales=upsales, promocodes=promocodes, paid_for_session=paid_for_session)
+            if not metadata.get('gift_receiver'):
+                reason.send_confirmation_email(upsales=upsales, promocodes=promocodes, paid_for_session=paid_for_session)
         except EDXEnrollmentError as e:
             logging.error('Failed to push verified enrollment %s to edx for user %s: %s' % (
                 session, user, e
@@ -385,6 +385,19 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
                     'session_id': session.id,
                     'error': str(e)
                 })
+
+    if metadata.get('gift_receiver'):
+        ctx = {
+            'gift_receiver': metadata.get('gift_receiver').get('username'),
+            'username': user.username
+        }
+        send_mail(
+            _(u'Успешная оплата курса в подарок на OpenProfession.ru'),
+            render_to_string('emails/gift.txt', ctx),
+            settings.EMAIL_NOTIFICATIONS_FROM,
+            [user.email],
+            html_message=render_to_string('emails/gift.html', ctx)
+        )
 
     logging.debug('[payment_for_user_complete] participant=%s new_mode=%s', participant.id, new_mode['mode'])
 
@@ -444,8 +457,8 @@ def _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links
             try:
                 reason = EnrollmentReason.objects.create(**params)
                 Participant.objects.filter(id=participant.id).update(sent_to_edx=timezone.now())
-                #if not metadata.get('gift_receiver'):
-                reason.send_confirmation_email()
+                if not metadata.get('gift_receiver'):
+                    reason.send_confirmation_email()
             except EDXEnrollmentError as e:
                 logging.error('Failed to push verified enrollment %s to edx for user %s: %s' % (
                     session, user, e
