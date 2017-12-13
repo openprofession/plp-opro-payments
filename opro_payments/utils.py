@@ -269,7 +269,7 @@ def payment_for_user(request, enrollment_type, upsale_links, price, create=True,
     if gift_receiver:
         metadata['gift_receiver'] = {
             'id': gift_receiver.id,
-            'username': gift_receiver.username,
+            'username': gift_receiver.first_name,
             'email': gift_receiver.email
         }
 
