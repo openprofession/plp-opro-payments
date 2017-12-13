@@ -389,15 +389,24 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
     if metadata.get('gift_receiver'):
         ctx = {
             'gift_receiver': metadata.get('gift_receiver').get('username'),
-            'username': user.username
+            'gift_sender': user.username,
+            'gift_sender_email': user.email
         }
         send_mail(
             _(u'Успешная оплата курса в подарок на OpenProfession.ru'),
-            render_to_string('emails/gift.txt', ctx),
+            render_to_string('emails/gift_sender.txt', ctx),
             settings.EMAIL_NOTIFICATIONS_FROM,
             [user.email],
-            html_message=render_to_string('emails/gift.html', ctx)
+            html_message=render_to_string('emails/gift_sender.html', ctx)
         )
+        send_mail(
+            _(u'Вам подарили онлайн-обучение на OpenProfession.ru'),
+            render_to_string('emails/gift_receiver.txt', ctx),
+            settings.EMAIL_NOTIFICATIONS_FROM,
+            [user.email],
+            html_message=render_to_string('emails/gift_receiver.html', ctx)
+        )
+        
 
     logging.debug('[payment_for_user_complete] participant=%s new_mode=%s', participant.id, new_mode['mode'])
 
