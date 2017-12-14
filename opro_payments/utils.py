@@ -236,7 +236,9 @@ def payment_for_user(request, enrollment_type, upsale_links, price, create=True,
         'user': {
             'id': user.id,
             'sso_id': user.sso_id,
-            'username': user.username
+            'username': user.username,
+            'first_name': user.first_name,
+            'email': user.email
         },
         'upsale_links': [i.id for i in upsale_links],
     }
@@ -269,7 +271,7 @@ def payment_for_user(request, enrollment_type, upsale_links, price, create=True,
     if gift_receiver:
         metadata['gift_receiver'] = {
             'id': gift_receiver.id,
-            'username': gift_receiver.first_name,
+            'first_name': gift_receiver.first_name,
             'email': gift_receiver.email
         }
 
@@ -389,9 +391,9 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
 
     if metadata.get('gift_receiver'):
         ctx = {
-            'gift_receiver': metadata.get('gift_receiver').get('username'),
-            'gift_sender': user.first_name,
-            'gift_sender_email': user.email
+            'gift_receiver': metadata.get('gift_receiver').get('first_name'),
+            'gift_sender': metadata.get('user').get('first_name'),
+            'gift_sender_email': metadata.get('user').get('email')
         }
         send_mail(
             _(u'Успешная оплата курса в подарок на OpenProfession.ru'),
