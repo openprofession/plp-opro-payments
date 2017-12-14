@@ -18,7 +18,7 @@ from raven import Client
 from payments.helpers import payment_for_participant_complete
 from payments.models import YandexPayment
 from payments.sources.yandex_money.signals import payment_completed
-from plp.models import Course, Participant, EnrollmentReason, SessionEnrollmentType, User, CourseSession
+from plp.models import Course, Participant, EnrollmentReason, SessionEnrollmentType, User, CourseSession, GiftPaymentInfo
 from plp.utils.edx_enrollment import EDXEnrollmentError
 from plp_edmodule.models import EducationalModuleEnrollmentType, EducationalModuleEnrollment, \
     EducationalModuleEnrollmentReason, EducationalModule, PromoCode
@@ -117,13 +117,13 @@ def get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsal
 
     return session, first_session_id, obj_price, total_price, products
 
-def get_or_create_user(first_name, email, send_mail=True):
+def get_or_create_user(first_name, email, lazy_send_mail=False):
     """
     Возвращает пользователя, если его нет - создает
     Для прохождения упрощенного сценарция задает пользователю переданное имя и пустую фамилию
     """
 
-    post_data = { 'emails': [email], 'send_mail': send_mail }
+    post_data = { 'emails': [email], 'lazy_send_mail': lazy_send_mail }
     request_url = '{}/users/simple_mass_registration/'.format(settings.SSO_NPOED_URL)
     r = requests.post(
         request_url,
@@ -402,6 +402,18 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
             [user.email],
             html_message=render_to_string('emails/gift_sender.html', ctx)
         )
+
+        gift_payment_info = GiftPaymentInfo.objects.filter(
+            gift_receiver__id=metadata.get('gift_receiver').get('id'),
+            gift_sender__id=metadata.get('user').get('id'),
+            course_id=session.id
+        )
+
+        if len(gift_payment_info) == 1:
+            gift_payment_info[0].has_paid = True
+            gift_payment_info.save()
+
+        """
         send_mail(
             _(u'Вам подарили онлайн-обучение на OpenProfession.ru'),
             render_to_string('emails/gift_receiver.txt', ctx),
@@ -409,6 +421,7 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
             [metadata.get('gift_receiver').get('email')],
             html_message=render_to_string('emails/gift_receiver.html', ctx)
         )
+        """
         
 
     logging.debug('[payment_for_user_complete] participant=%s new_mode=%s', participant.id, new_mode['mode'])

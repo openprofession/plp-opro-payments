@@ -28,7 +28,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from payments.models import YandexPayment
-from plp.models import CourseSession, User, Course, EnrollmentReason
+from plp.models import CourseSession, User, Course, EnrollmentReason, GiftPaymentInfo
 from plp.notifications.base import get_host_url
 from plp_edmodule.models import EducationalModule, EducationalModuleEnrollmentReason, PromoCode
 from plp.utils.helpers import get_prefix_and_site
@@ -351,7 +351,7 @@ def gift_op_payment_view(request):
                 session, first_session_id, obj_price, total_price, products = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales)
 
                 gift_sender = get_or_create_user(gift_form.cleaned_data['gift_sender'], gift_form.cleaned_data['gift_sender_email'])
-                gift_receiver = get_or_create_user(gift_form.cleaned_data['gift_receiver'], gift_form.cleaned_data['gift_receiver_email'], send_mail=False)
+                gift_receiver = get_or_create_user(gift_form.cleaned_data['gift_receiver'], gift_form.cleaned_data['gift_receiver_email'], lazy_send_mail=True)
                 payment_urls = get_gift_payment_urls(request, obj, gift_sender, session_id, utm_data)             
                 payment = payment_for_user(request, verified_enrollment, set(upsales), total_price,
                                 user=gift_sender, 
@@ -359,6 +359,18 @@ def gift_op_payment_view(request):
                                 first_session_id=first_session_id,
                                 gift_receiver=gift_receiver)
                                 #promocode=gift_form.cleaned_data['promocode'] if new_price else None)
+
+                gift_payment_info = GiftPaymentInfo(
+                    course_id=session_id 
+                    gift_receiver=gift_receiver
+                    gift_sender=gift_sender
+                    has_paid=False
+                    has_notified=False
+                    notification_date=gift_form.cleaned_data['send_date']
+                    gift_text=gift_form.cleaned_data['mail_template']
+                )
+
+                gift_payment_info.save()
 
                 return JsonResponse({
                     'status': 0,
