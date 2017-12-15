@@ -411,7 +411,7 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
 
         if len(gift_payment_info) == 1:
             gift_payment_info[0].has_paid = True
-            gift_payment_info.save()
+            gift_payment_info[0].save()
 
         """
         send_mail(
