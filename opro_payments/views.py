@@ -361,12 +361,12 @@ def gift_op_payment_view(request):
                                 #promocode=gift_form.cleaned_data['promocode'] if new_price else None)
 
                 gift_payment_info = GiftPaymentInfo(
-                    course_id=session_id 
-                    gift_receiver=gift_receiver
-                    gift_sender=gift_sender
-                    has_paid=False
-                    has_notified=False
-                    notification_date=gift_form.cleaned_data['send_date']
+                    course_id=session_id,
+                    gift_receiver=gift_receiver,
+                    gift_sender=gift_sender,
+                    has_paid=False,
+                    has_notified=False,
+                    notification_date=gift_form.cleaned_data['send_date'],
                     gift_text=gift_form.cleaned_data['mail_template']
                 )
 
