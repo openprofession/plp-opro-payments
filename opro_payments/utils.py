@@ -396,7 +396,7 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
             'gift_sender_email': metadata.get('user').get('email')
         }
         send_mail(
-            _(u'Успешная оплата курса в подарок на OpenProfession.ru'),
+            _(u'Успешная оплата курса «Дизайнер интерфейсов» в подарок'),
             render_to_string('emails/gift_sender.txt', ctx),
             'OpenProfession <welcome@openprofession.ru>',
             [user.email],
