@@ -392,6 +392,7 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
     if metadata.get('gift_receiver'):
         ctx = {
             'gift_receiver': metadata.get('gift_receiver').get('first_name'),
+            'gift_receiver_email': metadata.get('gift_receiver').get('email'),
             'gift_sender': metadata.get('user').get('first_name'),
             'gift_sender_email': metadata.get('user').get('email')
         }
