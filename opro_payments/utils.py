@@ -390,40 +390,30 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
                 })
 
     if metadata.get('gift_receiver'):
-        ctx = {
-            'gift_receiver': metadata.get('gift_receiver').get('first_name'),
-            'gift_receiver_email': metadata.get('gift_receiver').get('email'),
-            'gift_sender': metadata.get('user').get('first_name'),
-            'gift_sender_email': metadata.get('user').get('email')
-        }
-        send_mail(
-            _(u'Успешная оплата курса «Дизайнер интерфейсов» в подарок'),
-            render_to_string('emails/gift_sender.txt', ctx),
-            'OpenProfession <welcome@openprofession.ru>',
-            [user.email],
-            html_message=render_to_string('emails/gift_sender.html', ctx)
-        )
-
         gift_payment_info = GiftPaymentInfo.objects.filter(
             gift_receiver__id=metadata.get('gift_receiver').get('id'),
             gift_sender__id=metadata.get('user').get('id'),
             course_id=session.id
         )
 
-        if len(gift_payment_info) == 1:
-            gift_payment_info[0].has_paid = True
-            gift_payment_info[0].save()
+        if len(gift_payment_info) == 1: 
+            ctx = {
+                'gift_receiver': metadata.get('gift_receiver').get('first_name'),
+                'gift_receiver_email': metadata.get('gift_receiver').get('email'),
+                'gift_sender': metadata.get('user').get('first_name'),
+                'gift_sender_email': metadata.get('user').get('email'),
+                'course_name': u'Дизайнер интерфейсов' if gift_payment_info[0].product == 'ux' else u'VR-разработчик'
+            }
+            send_mail(
+                _(u'Успешная оплата курса «{}» в подарок'.format(ctx['course_name'])),
+                render_to_string('emails/gift_sender.txt', ctx),
+                'OpenProfession <welcome@openprofession.ru>',
+                [user.email],
+                html_message=render_to_string('emails/gift_sender.html', ctx)
+            )        
 
-        """
-        send_mail(
-            _(u'Вам подарили онлайн-обучение на OpenProfession.ru'),
-            render_to_string('emails/gift_receiver.txt', ctx),
-            'OpenProfession <welcome@openprofession.ru>',
-            [metadata.get('gift_receiver').get('email')],
-            html_message=render_to_string('emails/gift_receiver.html', ctx)
-        )
-        """
-        
+            gift_payment_info[0].has_paid = True
+            gift_payment_info[0].save() 
 
     logging.debug('[payment_for_user_complete] participant=%s new_mode=%s', participant.id, new_mode['mode'])
 

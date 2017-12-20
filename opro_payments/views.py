@@ -317,6 +317,10 @@ def gift_op_payment_view(request):
     utm_data = request.GET.get('_utm_data', '')
     only_first_course = bool(request.GET.get('only_first_course', False))
 
+    product = request.GET.get('product')
+    if not (product == 'ux' or product == 'vr'):
+        raise Http404
+
     if bool(session_id) == bool(module_id):
         raise Http404
     if (session_id and not session_id.isdigit()) or (module_id and not module_id.isdigit()):
@@ -367,7 +371,8 @@ def gift_op_payment_view(request):
                     has_paid=False,
                     has_notified=False,
                     notification_date=gift_form.cleaned_data['send_date'],
-                    gift_text=gift_form.cleaned_data['mail_template']
+                    gift_text=gift_form.cleaned_data['mail_template'],
+                    product=product
                 )
 
                 gift_payment_info.save()
@@ -394,6 +399,7 @@ def gift_op_payment_view(request):
     context = {
         'form': GiftForm(),
         'fields': payment_fields,
+        'product': product,
         'shop_url': settings.YANDEX_MONEY_SHOP_URL,
     }
 
