@@ -18,7 +18,7 @@ from raven import Client
 from payments.helpers import payment_for_participant_complete
 from payments.models import YandexPayment
 from payments.sources.yandex_money.signals import payment_completed
-from plp.models import Course, Participant, EnrollmentReason, SessionEnrollmentType, User, CourseSession
+from plp.models import Course, Participant, EnrollmentReason, SessionEnrollmentType, User, CourseSession, GiftPaymentInfo
 from plp.utils.edx_enrollment import EDXEnrollmentError
 from plp_edmodule.models import EducationalModuleEnrollmentType, EducationalModuleEnrollment, \
     EducationalModuleEnrollmentReason, EducationalModule, PromoCode
@@ -117,13 +117,13 @@ def get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsal
 
     return session, first_session_id, obj_price, total_price, products
 
-def get_or_create_user(first_name, email):
+def get_or_create_user(first_name, email, lazy_send_mail=False):
     """
     Возвращает пользователя, если его нет - создает
     Для прохождения упрощенного сценарция задает пользователю переданное имя и пустую фамилию
     """
 
-    post_data = { 'emails': [email] }
+    post_data = { 'emails': [email], 'lazy_send_mail': lazy_send_mail }
     request_url = '{}/users/simple_mass_registration/'.format(settings.SSO_NPOED_URL)
     r = requests.post(
         request_url,
@@ -171,8 +171,36 @@ def get_payment_urls(request, obj, user, session_id, utm_data):
 
     return urls
 
+def get_gift_payment_urls(request, obj, user, session_id, utm_data):
+    """
+    Возвращает значения для редиректа пользователя после успешной / неуспешной оплаты
+    """
+
+    host_url = get_host_url(request)
+    payment_fail = host_url + reverse('gift_op_payment_status', kwargs={
+        'status': 'fail',
+        'obj_id': obj.id,
+        'user_id': user.id,
+        'payment_type': 'session' if session_id else 'edmodule',
+    })
+    payment_success = host_url + reverse('gift_op_payment_status', kwargs={
+        'status': 'success',
+        'obj_id': obj.id,
+        'user_id': user.id,
+        'payment_type': 'session' if session_id else 'edmodule',
+    })
+    if utm_data:
+        payment_success = '{}?{}'.format(payment_success, utm_data)
+
+    urls = {
+        'payment_fail': payment_fail,
+        'payment_success': payment_success
+    }
+
+    return urls
+
 def payment_for_user(request, enrollment_type, upsale_links, price, create=True, only_first_course=False,
-                     first_session_id=None, order_number=None, user=None, promocode=None):
+                     first_session_id=None, order_number=None, user=None, gift_receiver=None, promocode=None):
     """
     Создание объекта YandexPayment для пользователя с сохранением в бд или без
     :param request: объект request
@@ -208,7 +236,9 @@ def payment_for_user(request, enrollment_type, upsale_links, price, create=True,
         'user': {
             'id': user.id,
             'sso_id': user.sso_id,
-            'username': user.username
+            'username': user.username,
+            'first_name': user.first_name,
+            'email': user.email
         },
         'upsale_links': [i.id for i in upsale_links],
     }
@@ -237,6 +267,13 @@ def payment_for_user(request, enrollment_type, upsale_links, price, create=True,
 
     if promocode:
         metadata['promocode'] = promocode
+
+    if gift_receiver:
+        metadata['gift_receiver'] = {
+            'id': gift_receiver.id,
+            'first_name': gift_receiver.first_name,
+            'email': gift_receiver.email
+        }
 
     try:
         payment = YandexPayment.objects.get(order_number=order_number)
@@ -272,7 +309,7 @@ def payment_for_user_complete(sender, **kwargs):
     payment = sender
     metadata = json.loads(payment.metadata or "{}")
 
-    user = metadata.get('user')
+    user = metadata.get('gift_receiver') if metadata.get('gift_receiver') else metadata.get('user')
     new_mode = metadata.get('new_mode')
     upsale_links = metadata.get('upsale_links')
     edmodule = metadata.get('edmodule')
@@ -339,7 +376,8 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
             ).exists()
             reason = EnrollmentReason.objects.create(**params)
             Participant.objects.filter(id=participant.id).update(sent_to_edx=timezone.now())
-            reason.send_confirmation_email(upsales=upsales, promocodes=promocodes, paid_for_session=paid_for_session)
+            if not metadata.get('gift_receiver'):
+                reason.send_confirmation_email(upsales=upsales, promocodes=promocodes, paid_for_session=paid_for_session)
         except EDXEnrollmentError as e:
             logging.error('Failed to push verified enrollment %s to edx for user %s: %s' % (
                 session, user, e
@@ -350,6 +388,32 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
                     'session_id': session.id,
                     'error': str(e)
                 })
+
+    if metadata.get('gift_receiver'):
+        gift_payment_info = GiftPaymentInfo.objects.filter(
+            gift_receiver__id=metadata.get('gift_receiver').get('id'),
+            gift_sender__id=metadata.get('user').get('id'),
+            course_id=session.id
+        )
+
+        if len(gift_payment_info) == 1: 
+            ctx = {
+                'gift_receiver': metadata.get('gift_receiver').get('first_name'),
+                'gift_receiver_email': metadata.get('gift_receiver').get('email'),
+                'gift_sender': metadata.get('user').get('first_name'),
+                'gift_sender_email': metadata.get('user').get('email'),
+                'course_name': u'Дизайнер интерфейсов' if gift_payment_info[0].product == 'ux' else u'VR-разработчик'
+            }
+            send_mail(
+                _(u'Успешная оплата курса «{}» в подарок'.format(ctx['course_name'])),
+                render_to_string('emails/gift_sender.txt', ctx),
+                'OpenProfession <welcome@openprofession.ru>',
+                [user.email],
+                html_message=render_to_string('emails/gift_sender.html', ctx)
+            )        
+
+            gift_payment_info[0].has_paid = True
+            gift_payment_info[0].save() 
 
     logging.debug('[payment_for_user_complete] participant=%s new_mode=%s', participant.id, new_mode['mode'])
 
@@ -409,7 +473,8 @@ def _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links
             try:
                 reason = EnrollmentReason.objects.create(**params)
                 Participant.objects.filter(id=participant.id).update(sent_to_edx=timezone.now())
-                reason.send_confirmation_email()
+                if not metadata.get('gift_receiver'):
+                    reason.send_confirmation_email()
             except EDXEnrollmentError as e:
                 logging.error('Failed to push verified enrollment %s to edx for user %s: %s' % (
                     session, user, e
