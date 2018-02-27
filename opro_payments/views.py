@@ -452,6 +452,17 @@ def gift_op_payment_status(request, payment_type, obj_id, user_id, status):
         if metadata.get('edmodule', {}).get('first_session_id'):
             context['first_session'] = get_object_or_404(CourseSession, id=metadata['edmodule']['first_session_id'])
 
+        promocode = metadata.get('promocode', None)
+        if promocode:
+            try:
+                promocode_object = PromoCode.objects.get(code=promocode)
+                promocode_object.used += 1
+                promocode_object.save()
+            except ObjectDoesNotExist:
+                logging.error('Promocode %s wasn\'t found for payment %s' % (
+                    promocode, payment.id
+                ))
+
         context['landing'] = True
         context['landing_username'] = user.first_name
 
