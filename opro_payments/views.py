@@ -348,12 +348,7 @@ def gift_op_payment_view(request):
         try:
             gift_form = GiftForm(request.POST)
             if gift_form.is_valid():
-                #if gift_form.cleaned_data['promocode']:
-                #    result = apply_promocode(gift_form.cleaned_data['promocode'], module_id, 'edmodule' if module_id else 'course', session_id, only_first_course)
-                #    new_price = result['new_price'] if result['status'] == 0 else None 
-
                 session, first_session_id, obj_price, total_price, products = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales)
-
                 gift_sender = get_or_create_user(gift_form.cleaned_data['gift_sender'], gift_form.cleaned_data['gift_sender_email'])
                 gift_receiver = get_or_create_user(gift_form.cleaned_data['gift_receiver'], gift_form.cleaned_data['gift_receiver_email'], lazy_send_mail=True)
                 payment_urls = get_gift_payment_urls(request, obj, gift_sender, session_id, utm_data)             
@@ -362,7 +357,6 @@ def gift_op_payment_view(request):
                                 only_first_course=only_first_course, 
                                 first_session_id=first_session_id,
                                 gift_receiver=gift_receiver)
-                                #promocode=gift_form.cleaned_data['promocode'] if new_price else None)
 
                 gift_payment_info = GiftPaymentInfo(
                     course_id=session_id,
@@ -468,7 +462,6 @@ def gift_op_payment_status(request, payment_type, obj_id, user_id, status):
                 logging.error('Promocode %s wasn\'t found for payment %s' % (
                     promocode, payment.id
                 ))
-
 
         context['landing'] = True
         context['landing_username'] = user.first_name
