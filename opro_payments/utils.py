@@ -377,7 +377,14 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
             reason = EnrollmentReason.objects.create(**params)
             Participant.objects.filter(id=participant.id).update(sent_to_edx=timezone.now())
             if not metadata.get('gift_receiver'):
-                reason.send_confirmation_email(upsales=upsales, promocodes=promocodes, paid_for_session=paid_for_session)
+                try:
+                    reason.send_confirmation_email(upsales=upsales, promocodes=promocodes,
+                                                   paid_for_session=paid_for_session)
+                except Exception as e:
+                    logging.error(
+                        u'Failed to send course payment message. '
+                        u'User: %s, upsale_links: %s, enrollment_reason %s, error: %s' %
+                        (user.email, upsale_links, reason.id, e))
         except EDXEnrollmentError as e:
             logging.error('Failed to push verified enrollment %s to edx for user %s: %s' % (
                 session, user, e
@@ -404,13 +411,17 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
                 'gift_sender_email': metadata.get('user').get('email'),
                 'course_name': u'Дизайнер интерфейсов' if gift_payment_info[0].product == 'ux' else u'VR-разработчик'
             }
-            send_mail(
-                _(u'Успешная оплата курса «{}» в подарок'.format(ctx['course_name'])),
-                render_to_string('emails/gift_sender.txt', ctx),
-                'OpenProfession <welcome@openprofession.ru>',
-                [user.email],
-                html_message=render_to_string('emails/gift_sender.html', ctx)
-            )        
+            try:
+                send_mail(
+                    _(u'Успешная оплата курса «{}» в подарок'.format(ctx['course_name'])),
+                    render_to_string('emails/gift_sender.txt', ctx),
+                    'OpenProfession <welcome@openprofession.ru>',
+                    [user.email],
+                    html_message=render_to_string('emails/gift_sender.html', ctx)
+                )
+            except Exception as e:
+                logging.error(u'Failed to send message for gift receiver. Email: %s, ctx: %s, error: %s' %
+                              (user.email, ctx, e))
 
             gift_payment_info[0].has_paid = True
             gift_payment_info[0].save() 
@@ -456,8 +467,13 @@ def _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links
         payment_order_id=payment.order_number if with_yandex else '',
         full_paid=not edmodule['only_first_course']
     )
-    edmodule_payed.send(EducationalModuleEnrollmentReason, instance=edmodule_reason,
-                        new_enrollment=new_enrollment, promocodes=promocodes, upsale_links=bought_upsales)
+    try:
+        edmodule_payed.send(EducationalModuleEnrollmentReason, instance=edmodule_reason,
+                            new_enrollment=new_enrollment, promocodes=promocodes, upsale_links=bought_upsales)
+    except Exception as e:
+        logging.error(u'Failed to send edmodule payment message. '
+                      u'User: %s, bought_upsales: %s, edmodule_reason: %s, error: %s' %
+                      (user.email, bought_upsales, edmodule_reason.id, e))
 
     if edmodule['only_first_course'] and edmodule.get('first_session_id'):
         session = CourseSession.objects.get(id=edmodule['first_session_id'])
@@ -474,7 +490,12 @@ def _payment_for_module_complete(payment, metadata, user, edmodule, upsale_links
                 reason = EnrollmentReason.objects.create(**params)
                 Participant.objects.filter(id=participant.id).update(sent_to_edx=timezone.now())
                 if not metadata.get('gift_receiver'):
-                    reason.send_confirmation_email()
+                    try:
+                        reason.send_confirmation_email()
+                    except Exception as e:
+                        logging.error(u'Failed to send edmodule first course payment message. '
+                                      u'User: %s, edmodule_reason: %s, reason: %s, error: %s' %
+                                      (user.email, edmodule_reason.id, reason.id, e))
             except EDXEnrollmentError as e:
                 logging.error('Failed to push verified enrollment %s to edx for user %s: %s' % (
                     session, user, e
