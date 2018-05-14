@@ -118,7 +118,7 @@ def get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsal
 
     return session, first_session_id, obj_price, total_price, products
 
-def get_or_create_user(first_name, email, lazy_send_mail=False):
+def get_or_create_user(first_name, email, phone=None, lazy_send_mail=False):
     """
     Возвращает пользователя, если его нет - создает
     Для прохождения упрощенного сценарция задает пользователю переданное имя и пустую фамилию
@@ -140,6 +140,8 @@ def get_or_create_user(first_name, email, lazy_send_mail=False):
     user.username = re.sub('[^a-zA-Z0-9]', '_', email)
     user.first_name = first_name
     user.last_name = ' '
+    if phone:
+        user.phone = phone
     user.save()
 
     return user

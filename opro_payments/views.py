@@ -86,6 +86,7 @@ def landing_op_payment_view(request):
 
     first_name = request.GET.get('first_name', '')
     email = request.GET.get('email', '')
+    phone = request.GET.get('phone', '')
     session_id = request.GET.get('course_session_id', '')
     module_id = request.GET.get('edmodule_id', '')
     utm_data = request.GET.get('_utm_data', '')
@@ -157,7 +158,7 @@ def landing_op_payment_view(request):
                 raise Http404
                 
             session, first_session_id, obj_price, total_price, products = get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsales, new_price)
-            user = get_or_create_user(first_name, email)
+            user = get_or_create_user(first_name, email, phone=phone)
             payment_urls = get_payment_urls(request, obj, user, session_id, utm_data) 
             payment = payment_for_user(request, verified_enrollment, set(upsales), total_price,
                                 user=user, only_first_course=only_first_course, first_session_id=first_session_id, promocode=promocode)
