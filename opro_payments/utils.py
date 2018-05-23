@@ -331,7 +331,9 @@ def payment_for_user_complete(sender, **kwargs):
     if course_payment:
         enr_type = SessionEnrollmentType.objects.get(id=new_mode['id'])
         session = enr_type.session
-        ZapierInformer().push(ZapierInformer.ACTION.plp_course_pay, session=session, **kwargs)
+        p = Participant.objects.filter(user=user, session=session).first()
+        ZapierInformer().push(ZapierInformer.ACTION.plp_course_pay, session=session,
+                              participant_id=p and p.id, **kwargs)
     else:
         module = EducationalModule.objects.get(id=edmodule['id'])
         ZapierInformer().push(ZapierInformer.ACTION.plp_edmodule_pay, module=module, **kwargs)
