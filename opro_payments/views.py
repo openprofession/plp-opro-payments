@@ -17,6 +17,7 @@ from django.core.urlresolvers import reverse
 from django.core.validators import validate_email
 from django.template.loader import get_template
 from django.utils.crypto import constant_time_compare
+from django.utils.html import mark_safe
 from django.utils.translation import ugettext as _
 
 import requests
@@ -991,3 +992,16 @@ class EnrollmentApiView(APIView):
             log.append(_(u'Апсейлы со следующими id не найдены: %s') %
                        ', '.join(map(lambda x: str(x), not_found_upsales)))
         return obj, available_upsales, log
+
+
+def offer_text_view(request, offer_type=None, obj_id=None):
+    """
+    Просмотр текста оферты курса/образовательного модуля
+    """
+    model = Course if offer_type == 'course' else EducationalModule
+    obj = get_object_or_404(model, id=obj_id)
+    ctx = {
+        'title': _(u'Оферта'),
+        'content': mark_safe(obj.offer_text),
+    }
+    return render(request, 'flatpages/default.html', {'flatpage': ctx})
