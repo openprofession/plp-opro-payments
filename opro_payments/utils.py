@@ -19,7 +19,7 @@ from payments.helpers import payment_for_participant_complete
 from payments.models import YandexPayment
 from payments.sources.yandex_money.signals import payment_completed
 from plp.models import Course, Participant, EnrollmentReason, SessionEnrollmentType, User, CourseSession, GiftPaymentInfo
-from plp.utils.edx_enrollment import EDXEnrollmentError
+from plp.utils.edx_enrollment import EDXEnrollmentError, EDXEnrollment
 from plp.utils.webhook import ZapierInformer
 from plp_edmodule.models import EducationalModuleEnrollmentType, EducationalModuleEnrollment, \
     EducationalModuleEnrollmentReason, EducationalModule, PromoCode
@@ -331,7 +331,9 @@ def payment_for_user_complete(sender, **kwargs):
     if course_payment:
         enr_type = SessionEnrollmentType.objects.get(id=new_mode['id'])
         session = enr_type.session
-        ZapierInformer().push(ZapierInformer.ACTION.plp_course_pay, session=session, **kwargs)
+        p = Participant.objects.filter(user=user, session=session).first()
+        ZapierInformer().push(ZapierInformer.ACTION.plp_course_pay, session=session,
+                              participant_id=p and p.id, **kwargs)
     else:
         module = EducationalModule.objects.get(id=edmodule['id'])
         ZapierInformer().push(ZapierInformer.ACTION.plp_edmodule_pay, module=module, **kwargs)
@@ -382,22 +384,19 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
         payment_order_id=payment.order_number if with_yandex else '',
     )
     if not EnrollmentReason.objects.filter(**params).exists():
+        paid_for_session = EnrollmentReason.objects.filter(
+            participant=participant,
+            session_enrollment_type__mode='verified'
+        ).exists()
+        reason = EnrollmentReason(**params)
+        reason.save_no_edx_push()
         try:
-            paid_for_session = EnrollmentReason.objects.filter(
-                participant=participant,
-                session_enrollment_type__mode='verified'
-            ).exists()
-            reason = EnrollmentReason.objects.create(**params)
+            EDXEnrollment(edx_url=reason.session_enrollment_type.session.course.edx_url).enroll(
+                course_id=reason.session_enrollment_type.session.get_absolute_slug_v1(),
+                user=reason.participant.user.username,
+                mode=reason.session_enrollment_type.mode
+            )
             Participant.objects.filter(id=participant.id).update(sent_to_edx=timezone.now())
-            if not metadata.get('gift_receiver'):
-                try:
-                    reason.send_confirmation_email(upsales=upsales, promocodes=promocodes,
-                                                   paid_for_session=paid_for_session)
-                except Exception as e:
-                    logging.error(
-                        u'Failed to send course payment message. '
-                        u'User: %s, upsale_links: %s, enrollment_reason %s, error: %s' %
-                        (user.email, upsale_links, reason.id, e))
         except EDXEnrollmentError as e:
             logging.error('Failed to push verified enrollment %s to edx for user %s: %s' % (
                 session, user, e
@@ -408,6 +407,15 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
                     'session_id': session.id,
                     'error': str(e)
                 })
+        if not metadata.get('gift_receiver'):
+            try:
+                reason.send_confirmation_email(upsales=upsales, promocodes=promocodes,
+                                               paid_for_session=paid_for_session)
+            except Exception as e:
+                logging.error(
+                    u'Failed to send course payment message. '
+                    u'User: %s, upsale_links: %s, enrollment_reason %s, error: %s' %
+                    (user.email, upsale_links, reason.id, e))
 
     if metadata.get('gift_receiver'):
         gift_payment_info = GiftPaymentInfo.objects.filter(

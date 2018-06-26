@@ -21,4 +21,5 @@ urlpatterns = [
         name='op_payment_corporate_order_done'),
     url(r'^op_payment/api/enroll/?$', views.EnrollmentApiView.as_view(), name='op-api-enrollment'),
     url(r'^promocode/?$', views.promocode, name='promocode'),
+    url(r'^offer-text/(?P<offer_type>course|edmodule)/(?P<obj_id>\d+)/?$', views.offer_text_view, name='op-offer-text'),
 ]
