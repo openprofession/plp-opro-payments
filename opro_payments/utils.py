@@ -95,7 +95,8 @@ def get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsal
             except TypeError:
                 return HttpResponseServerError()
         else:
-            obj_price = obj.get_price_list()['whole_price']
+            obj_price = get_edmodule_price(obj)
+
             products.append({
                 'title': obj.title, 
                 'price': obj_price 
@@ -117,6 +118,14 @@ def get_obj_price(session_id, verified_enrollment, only_first_course, obj, upsal
     total_price = float(obj_price) + upsales_price
 
     return session, first_session_id, obj_price, total_price, products
+
+def get_edmodule_price(module):
+    try:
+        verified = EducationalModuleEnrollmentType.objects.get(module=module, active=True, mode='verified')
+    except ObjectDoesNotExist:
+        raise Exception("No price for education module with id={}".format(module.id))
+
+    return verified.price
 
 def get_or_create_user(first_name, email, lazy_send_mail=False):
     """
