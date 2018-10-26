@@ -400,7 +400,7 @@ def _payment_for_session_complete(payment, metadata, user, new_mode, upsale_link
         reason = EnrollmentReason(**params)
         reason.save_no_edx_push()
         try:
-            EDXEnrollment(edx_url=reason.session_enrollment_type.session.course.edx_url).enroll(
+            EDXEnrollment(edx_url=reason.session_enrollment_type.session.get_edx_url()).enroll(
                 course_id=reason.session_enrollment_type.session.get_absolute_slug_v1(),
                 user=reason.participant.user.username,
                 mode=reason.session_enrollment_type.mode
