@@ -40,14 +40,20 @@ if RAVEN_CONFIG:
 def get_merchant_receipt(contact, products):
     items = []
     for product in products:
-        items.append({
+        item = {
             'quantity': QUANTITY,
             'price': {
                 "amount": "%.2f" % float(product['price'])
             },
             "tax": TAX_RATE,
             "text": product['title']
-        })
+        }
+        if getattr(settings, 'YANDEX_PAYMENT_METHOD_TYPE', '') and getattr(settings, 'YANDEX_PAYMENT_SUBJECT_TYPE', ''):
+            item.update({
+                "paymentMethodType": settings.YANDEX_PAYMENT_METHOD_TYPE,
+                "paymentSubjectType": settings.YANDEX_PAYMENT_SUBJECT_TYPE,
+            })
+        items.append(item)
 
     receipt = {
         'customerContact': contact,
